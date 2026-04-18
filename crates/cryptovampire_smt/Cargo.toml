@@ -2,6 +2,7 @@
 name = "cryptovampire_smt"
 version = "0.1.0"
 edition = "2024"
+authors = ["GeoSansLightBold"]
 
 [lints]
 workspace = true
@@ -9,12 +10,18 @@ workspace = true
 [dependencies]
 utils = { path = "../utils"}
 logic_formula = {path = "../logic_formula"}
+quarck = {path = "../quarck"}
 cryptovampire_macros = {path = "../cryptovampire_macros", optional = true}
 
 log.workspace = true
 env_logger.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true}
+rustc-hash.workspace = true
+bitflags.workspace = true
+static_init.workspace = true
+thiserror.workspace = true
+
 regex = {version = "1.11.1", optional = true}
 
 [features]

@@ -12,6 +12,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    nixpkgs-vampire.url ="github:NixOS/nixpkgs/e0d5027e8873eaa5e8f74fba39072fcb231f4b4b";
+
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
@@ -28,25 +31,45 @@
     #   url = "github:nix-community/fenix/monthly";
     #   inputs.nixpkgs.follows = "nixpkgs";
     # };
+
+    vampire-master-src = {
+      url = "git+https://github.com/vprover/vampire.git?submodules=1";
+      flake = false;
+    };
   };
 
   outputs =
     inputs@{
       self,
       nixpkgs,
+      nixpkgs-vampire,
       flake-utils,
       treefmt-nix,
       # fenix,
       rust-overlay,
+      vampire-master-src,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        overlays = [ (import rust-overlay) ];
+        vampire-master-overlay = final: prev: {
+          vampire = prev.vampire.overrideAttrs (oldAttrs: {
+            src = vampire-master-src;
+          });
+        };
+        vampire-4-overlay = final: prev: {
+          vampire = pkgs-vampire.vampire;
+        };
+        overlays = [
+          (import rust-overlay)
+          vampire-4-overlay 
+          # vampire-overlay
+        ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
+        pkgs-vampire = import nixpkgs-vampire {inherit system; };
         treefmtEval = treefmt-nix.lib.evalModule pkgs ./nix/fmt.nix;
 
         # rust = fenix.packages.${system}.complete;

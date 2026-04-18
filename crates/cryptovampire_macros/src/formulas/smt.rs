@@ -8,9 +8,6 @@ use syn::parse::{Parse, ParseStream, Parser, Result};
 use syn::punctuated::Punctuated;
 use syn::{Token, parse_macro_input};
 
-// Counter for generating unique temporary variable names
-static VAR_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 use super::parser::*;
 
 struct MacroInput<C = ()> {
@@ -47,14 +44,6 @@ fn generate_banged_expr_tokens(
             quote!(#path::SmtFormula::Var(#ret))
         }
         BangedContentKind::Cross(_) => ret,
-    }
-}
-
-fn generate_var_index_expr_tokens(mi: &MacroInput, v_idx: &VarIndex) -> proc_macro2::TokenStream {
-    match v_idx {
-        // VarIndex::Lit(lit_int) => quote! { #lit_int },
-        VarIndex::Expr(expr) => quote! { (#expr) }, // Parenthesize expr
-        VarIndex::Ident(ident) => quote! { #ident.clone() },
     }
 }
 
@@ -116,11 +105,11 @@ fn generate_code(mi: &MacroInput, Ast { inner: parsed, .. }: Ast) -> proc_macro2
         }
         InnerAst::Not(arg) => {
             let processed_arg = generate_code(mi, *arg);
-            quote! { #crate_path::SmtFormula::Not(Box::new(#processed_arg)) }
+            quote! { #crate_path::SmtFormula::Not(::quarck::CowArc::new(#processed_arg)) }
         }
         InnerAst::Implies(a, b) => {
             let [a, b] = [*a, *b].map(|x| generate_code(mi, x));
-            quote! {#crate_path::SmtFormula::Implies(Box::new(#a), Box::new(#b))}
+            quote! {#crate_path::SmtFormula::Implies(::quarck::CowArc::new([#a, #b]))}
         }
         InnerAst::FunApp(FunAppAst { func, args }) => {
             let processed_args = generate_args(mi, args); //args.into_iter().map(generate_code);
@@ -157,10 +146,10 @@ fn generate_code(mi: &MacroInput, Ast { inner: parsed, .. }: Ast) -> proc_macro2
                     generate_quant_with_binders(mi, constructor, processed_body, bindings)
                 }
                 VarBindings::Expr(expr) => {
-                    quote! {#constructor({ #expr }.into_iter().collect(), Box::new(#processed_body))}
+                    quote! {#constructor({ #expr }.into_iter().collect(), ::quarck::CowArc::new(#processed_body))}
                 }
                 VarBindings::Ident(ident) => {
-                    quote! {#constructor(#ident.into_iter().collect(), Box::new(#processed_body))}
+                    quote! {#constructor(#ident.into_iter().collect(), ::quarck::CowArc::new(#processed_body))}
                 }
             }
         }
@@ -184,8 +173,8 @@ fn generate_quant_with_binders(
         {
             #(#let_bindings)*
             #constructor( // Use the Forall or Exists constructor
-                vec![ #(#names.clone()),* ],
-                Box::new(#processed_body)
+                vec![ #(#names.clone()),* ].into(),
+                ::quarck::CowArc::new(#processed_body)
             )
         }
     }

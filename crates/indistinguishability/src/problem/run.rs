@@ -2,9 +2,10 @@ use cryptovampire_smt::Smt;
 use egg::EGraph;
 use golgge::{Program, Rule};
 use itertools::Itertools;
-use log::trace;
+use log::{info, trace};
 
 use super::*;
+use crate::libraries::{Libraries, Library};
 use crate::terms::{EMPTY, EQUIV, HAPPENS, MACRO_FRAME, NONCE, PRED, UNFOLD_MSG};
 use crate::{Configuration, Lang, libraries, rexp, smt};
 
@@ -15,9 +16,9 @@ impl Problem {
 
         let golgge_config = {
             let Configuration {
-                node_limit,
-                time_limit,
-                iter_limit,
+                egg_node_limit: node_limit,
+                egg_timeout: time_limit,
+                egg_iter_limit: iter_limit,
                 trace,
                 trace_rebuilds,
                 ..
@@ -40,8 +41,10 @@ impl Problem {
                 .build()
         };
 
-        let eq_rules = libraries::mk_egg_rewrites(self);
-        let rules: Vec<RcRule> = libraries::mk_golgge_rules(self).collect_vec();
+        // let mut eq_rules = Vec::new();
+        // libraries::add_egg_rewrites(self, &mut eq_rules);
+        let rules = Libraries::mk_all_rules(self);
+        let eq_rules = Libraries::mk_all_egg_rewrites(self);
 
         let mut prgm = golgge::Program::build()
             .eq_rules(eq_rules)
@@ -50,7 +53,7 @@ impl Problem {
             .egraph(EGraph::new(PAnalysis::builder().pbl(self).build()).with_explanations_enabled())
             .call();
 
-        libraries::init_egraph(prgm.egraph_mut());
+        Libraries::init_egraph(prgm.egraph_mut());
 
         prgm
     }
@@ -59,11 +62,6 @@ impl Problem {
     ///
     /// This function runs the solver on the protocols `p1` and `p2`.
     /// It returns `true` if the protocols are indistinguishable, `false` otherwise.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if `p1` or `p2` are not valid indices for the
-    /// protocols in the `Problem`.
     pub fn run_solver(&mut self, p1: usize, p2: usize) -> bool {
         let start = ::std::time::Instant::now();
         assert!(
@@ -74,7 +72,21 @@ impl Problem {
             p2 < self.protocols.len(),
             "p2 in not a protocol of `self` (index to large)"
         );
-        debug_assert!(self.valid());
+
+        // crash on invalid problems
+        if let Err(e) = self.valid() {
+            panic!("invalid problem: {e}")
+        }
+
+        if self.config.vampire_path.is_none()
+            && self.config.z3_path.is_none()
+            && self.config.cvc5_path.is_none()
+        {
+            eprintln!(
+                "`vampire`, `z3` and `cvc5` are all disabled or unavailable, this is unlikely to \
+                 succeed."
+            )
+        }
 
         let cp = self.checkpoint();
         // code block to ensure cleanup
@@ -95,7 +107,7 @@ impl Problem {
                         break 'a false;
                     };
 
-                    if self.config.trace {
+                    if self.config.trace || self.config.trace_guessed_published_nonces {
                         eprintln!(
                             "re-running with published nonces [{}]",
                             candidates.iter().join(", ")
@@ -147,6 +159,9 @@ impl Problem {
             // the result of the computation
             let mut res = true;
 
+            self.reinitialize_graph(p1);
+            self.reinitialize_graph(p2);
+
             // the steps in the problem
             let mut steps = {
                 // just to make things cleaner
@@ -174,8 +189,7 @@ impl Problem {
                 assert_eq!(init.name, "init");
 
                 // we add to `extra_smt` things specific to this run that need to be reflected in smt
-                self.extra_smt_mut()
-                    .push(Smt::mk_assert(smt!((HAPPENS init))));
+                // self.extra_smt_mut().assert_one(smt!((HAPPENS init))); // current step lib
 
                 let mut pgrm = self.mk_program();
 
@@ -203,7 +217,7 @@ impl Problem {
                     break 'a res;
                 }
 
-                tr!("running step {}", s.name);
+                info!("running step {}", s.name);
 
                 // we ensure we remove the extra stuff from the previous run
                 self.extra_smt_mut().truncate(base_smt_n);
@@ -228,10 +242,11 @@ impl Problem {
                     args: args.clone(),
                 });
 
-                self.extra_smt.push(Smt::mk_assert({
-                    let args = args.iter().map(|f| smt!(f));
-                    smt!((HAPPENS (s #args*)))
-                }));
+                // self.extra_smt.push(Smt::mk_assert({
+                //     let args = args.iter().map(|f| smt!(f));
+                //     smt!((HAPPENS (s #args*)))
+                // }));
+                // current step lib
 
                 let s = rexp!((s #(args.iter().map(|f| rexp!(f)))*));
                 let goal = rexp!((EQUIV (MACRO_FRAME (PRED #s) p1f) (MACRO_FRAME (PRED #s) p2f)

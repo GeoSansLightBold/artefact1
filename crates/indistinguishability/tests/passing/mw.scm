@@ -1,6 +1,17 @@
-(require "cryptovampire/v2")
 (require "../save-results.scm")
-(require-builtin cryptovampire as cv-)
+(require "ccsa/function")
+(require "ccsa/builtin-functions")
+(require "ccsa/cryptography")
+(require "ccsa/protocol")
+(require "ccsa/solver")
+(require "ccsa/sort")
+(require "ccsa/formula")
+(require "ccsa/signature")
+(require-builtin ccsa/ll/pbl as pbl.)
+(require-builtin ccsa/ll/configuration as config.)
+(require-builtin ccsa/ll as b.)
+(require-builtin ccsa/ll/report as report.)
+(require-builtin ccsa/ll/rewrite as rw.)
 
 (define pbl (mk-problem 'x))
 
@@ -16,8 +27,8 @@
 (define-function ko pbl Bitstring)
 (define-function k1 pbl (Index) -> Nonce)
 (define-function k2 pbl (Index Index) -> Nonce)
-(define-function _nt pbl (Index Index) -> Nonce)
-(define-function _nr pbl (Index) -> Nonce)
+(define-function nt pbl (Index Index) -> Nonce)
+(define-function nr pbl (Index) -> Nonce)
 (define-function tag1 pbl Bitstring)
 (define-function tag2 pbl Bitstring)
 
@@ -25,16 +36,13 @@
 (define-function id2 pbl (Index Index) -> Bitstring)
 
 (define-alias _mk pbl (Index Index Protocol) Nonce
-  [ ([ (i Index) (j Index) ] (i j p1) -> (k1 i))
-  ([ (i Index) (j Index) ] (i j p2) -> (k2 i j)) ])
+  [ ([ (i Index) (j Index) ] (i j p1) -> ((unwrap-nonce k1) i))
+  ([ (i Index) (j Index) ] (i j p2) -> ((unwrap-nonce k2) i j)) ])
+(define mk (wrap-nonce _mk))
 
 (define-alias mid pbl (Index Index Protocol) Bitstring
   [ ([ (i Index) (j Index) ] (i j p1) -> (id1 i))
   ([ (i Index) (j Index) ] (i j p2) -> (id2 i j)) ])
-
-(define mk (wrap-nonce _mk))
-(define nt (wrap-nonce _nt))
-(define nr (wrap-nonce _nr))
 
 (define empty-cond (lambda _ mtrue))
 
@@ -56,21 +64,23 @@
 (define tag
   (declare-step pbl "tag" (list Index Index)
     (step p1 empty-cond
-      (lambda (in i j)
+      (lambda (in i j . _)
         (tuple (nt i j)
           (mxor
             (mid i j p1)
             (mhash
               (tuple (tuple in (nt i j)) tag1)
-              (mk i j p1))))))
+              (mk i j p1)))))
+      empty-assignements)
     (step p2 empty-cond
-      (lambda (in i j)
+      (lambda (in i j . _)
         (tuple (nt i j)
           (mxor
             (mid i j p2)
             (mhash
               (tuple (tuple in (nt i j)) tag1)
-              (mk i j p2))))))))
+              (mk i j p2)))))
+      empty-assignements)))
 ; (bind ((j Index) (i Index) (p Protocol))
 ;   (cv-add-rewrite pbl (cv-mk-rewrite "rebuild mid" (list j i p)
 ;       (mid i j p)
@@ -80,22 +90,24 @@
 
 (define r1
   (declare-step pbl "r" (list Index)
-    (step p1 empty-cond (lambda (_ i) (nr i)))
-    (step p2 empty-cond (lambda (_ i) (nr i)))))
+    (step p1 empty-cond (lambda (_ i . _) (nr i)) empty-assignements)
+    (step p2 empty-cond (lambda (_ i . _) (nr i)) empty-assignements)))
 
 (bind ((i Index))
   (begin
-    (cv-add-rewrite pbl (cv-mk-rewrite "lemma1" (list i)
+    (add-rewrite pbl (rw.new "lemma1" (list i)
         (nr i) (macro_msg (r1 i) p1)))
-    (cv-add-rewrite pbl (cv-mk-rewrite "lemma2" (list i)
+    (add-rewrite pbl (rw.new "lemma2" (list i)
         (nr i) (macro_msg (r1 i) p2)))))
 
 (define r2
   (declare-step pbl "r2" (list Index)
     (step p1 empty-cond
-      (lambda (in j) (mk-fdst1 in j p1)))
+      (lambda (in j . _) (mk-fdst1 in j p1))
+      empty-assignements)
     (step p2 empty-cond
-      (lambda (in j) (mk-fdst1 in j p2)))))
+      (lambda (in j . _) (mk-fdst1 in j p2))
+      empty-assignements)))
 (add-constrain pbl (i) (lt (r1 i) (r2 i)))
 
 (initialize-as-prf prf mhash)
@@ -103,7 +115,7 @@
 
 ; hashes have the length of nonces
 (bind ((i Index) (j Index) (p Protocol))
-  (cv-add-rewrite pbl (cv-mk-rewrite "length id" (list i j p)
+  (add-rewrite pbl (rw.new "length id" (list i j p)
       (bitstring-length (mid i j p)) eta)))
 
 (define (mk-fdst2 r p)
@@ -119,22 +131,23 @@
       ko)))
 
 (bind ((j Index) (r Index) (p Protocol))
-  (cv-add-rewrite pbl (cv-mk-rewrite "lemma" (list j r p)
+  (add-rewrite pbl (rw.new "lemma" (list j r p)
       (m_ite (macro_exec (r2 r) p) (mk-fdst1 (macro_input (r2 r) p) j p) mempty)
       (m_ite (macro_exec (r2 r) p) (mk-fdst2 r p) mempty))))
 
 
-(cv-add-smt-axiom pbl (mnot (eq tag1 tag2)))
+(add-smt-axiom pbl (mnot (eq tag1 tag2)))
 
 ;; configuration
-; (cv-set-trace pbl #t)
-(cv-set-vampire-timeout pbl (cv-string->duration "1.5s"))
-(cv-set-node-limit pbl 100000)
-(cv-set-prf-limit pbl 1)
+; (config.set_trace pbl #t)
+(define default-timeout (b.string->duration "150ms"))
+(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
+(config.set_egg_node_limit pbl 100000)
+(config.set_prf_limit pbl 1)
 
 (if (run pbl p1 p2)
   (displayln "success")
   (error "failed mw"))
 
-(displayln (cv-print-report (cv-get-report pbl)))
+(displayln (report.print-report (pbl.get-report pbl)))
 (save-results "mw" pbl)

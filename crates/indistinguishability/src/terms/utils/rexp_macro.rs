@@ -34,8 +34,8 @@ macro_rules! vec_smt {
     };
 }
 
-pub type SmtFormula = crate::MSmtFormula;
-pub type Smt = crate::MSmt;
+pub type SmtFormula<'a> = crate::MSmtFormula<'a>;
+pub type Smt<'a> = crate::MSmt<'a>;
 
 pub type MacroExpr = Formula;
 pub type MacroVar = Variable;
@@ -79,28 +79,24 @@ pub fn mk_ors(args: implvec!(MacroExpr)) -> MacroExpr {
 
 pub fn mk_eqs(args: implvec!(MacroExpr)) -> MacroExpr {
     let args = args.into_iter().collect_vec();
-    MacroExpr::and(
-        args.iter()
-            .cloned()
-            .tuple_combinations()
-            .map(|(a, b)| Formula::App {
-                head: EQ.const_clone(),
-                args: mk_cowarc![a, b],
-            }),
-    )
+    MacroExpr::and(args.iter().cloned().tuple_combinations().map(|(a, b)| {
+        debug_assert!(check_same_sorts(&a, &b));
+        Formula::App {
+            head: EQ.const_clone(),
+            args: mk_cowarc![a, b],
+        }
+    }))
 }
 
 pub fn mk_neqs(args: implvec!(MacroExpr)) -> MacroExpr {
     let args = args.into_iter().collect_vec();
-    MacroExpr::and(
-        args.iter()
-            .cloned()
-            .tuple_combinations()
-            .map(|(a, b)| !Formula::App {
-                head: EQ.const_clone(),
-                args: mk_cowarc![a, b],
-            }),
-    )
+    MacroExpr::and(args.iter().cloned().tuple_combinations().map(|(a, b)| {
+        debug_assert!(check_same_sorts(&a, &b));
+        !Formula::App {
+            head: EQ.const_clone(),
+            args: mk_cowarc![a, b],
+        }
+    }))
 }
 
 /// for [rexp]
@@ -163,6 +159,13 @@ pub fn mk_quantifier(
 pub fn convert_to_ground_rexp(c: implvec!(LangVar)) -> Result<RecExpr<crate::Lang>, egg::Var> {
     let tmp: PatternAst<crate::Lang> = c.into_iter().collect();
     tmp.try_into()
+}
+
+pub fn check_same_sorts(a: &Formula, b: &Formula) -> bool {
+    match (a.try_get_sort(), b.try_get_sort()) {
+        (Some(sa), Some(sb)) => sa.unify(sb),
+        _ => true,
+    }
 }
 
 pub(crate) trait FunctionRef {

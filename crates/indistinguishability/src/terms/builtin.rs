@@ -1,7 +1,8 @@
 use std::borrow::Cow;
+use std::sync::atomic::AtomicBool;
 
-use bitflags::Bits;
 use cryptovampire_macros::mk_builtin_funs;
+use log::trace;
 
 use super::Sort::{self, *};
 use super::{Alias, AliasRewrite, Function, FunctionFlags, InnerFunction, Signature};
@@ -13,19 +14,19 @@ use crate::utils::InnerSmartCow;
 macro_rules! s {
     ($t:ident, $n:literal) => {
         Signature {
-            inputs: Cow::Borrowed(&[$t; $n]),
+            inputs: ::quarck::CowArc::from_ref(&[$t; $n]),
             output: $t,
         }
     };
   ($($ins:ident),* -> $out:ident) => {
       Signature {
-        inputs: Cow::Borrowed(&[$($ins),*]),
+        inputs: ::quarck::CowArc::from_ref(&[$($ins),*]),
         output: $out
       }
   };
   (() -> $out:ident) => {
       Signature {
-        inputs: Cow::Borrowed(&[]),
+        inputs: ::quarck::CowArc::from_ref(&[]),
         output: $out
       }
   };
@@ -81,15 +82,21 @@ macro_rules! alias {
 // -----------------------------------------------------------------------------
 
 /// A static list of all concrete `Sort`s, excluding `Any`.
-pub static SORT_LIST: [Sort; 6] = {
+pub static SORT_LIST: [Sort; 7] = {
     use Sort::*;
-    [Bool, Bitstring, Time, Protocol, Nonce, Index]
+    [Bool, Bitstring, Time, Protocol, Nonce, Index, MemoryCell]
 };
 
 /// [Sort]s to be declared in smt
-pub static SMT_SORT_LIST: [Sort; 3] = {
+pub static SMT_SORT_LIST: [Sort; 4] = {
     use Sort::*;
-    [Bitstring, Time, /* Protocol, Nonce, */ Index]
+    [
+        Bitstring,
+        Time,
+        // Protocol, Nonce,
+        Index,
+        UnfoldingCall,
+    ]
 };
 
 // -----------------------------------------------------------------------------
@@ -106,7 +113,9 @@ mk_builtin_funs!(
         protocol_idx: 0,
         alias: None,
         step_idx: 0,
-        cryptography: Cow::Borrowed(&[])
+        cell_idx: 0,
+        cryptography: Cow::Borrowed(&[]),
+        grabage_collectable: AtomicBool::new(false),
     };
 
     // =========================================================
@@ -191,6 +200,12 @@ mk_builtin_funs!(
         flags: f!(BUILTIN_SMT)
     };
 
+    /// Index equality
+    INDEX_EQ "idx-eq" {
+        signature: s!(Index, Index -> Bool),
+        flags: f!(BUILTIN_SMT)
+    };
+
     // ~~~~~~~~~~~ base bitstrings ~~~~~~~~~~~~~~
 
     NONCE "mnonce" "nonce" {
@@ -254,6 +269,12 @@ mk_builtin_funs!(
         signature: s!(Time, 1),
     };
 
+    /// Equality for timepoints
+    TEQ "step-eq" {
+        signature: s!(Time, Time -> Bool),
+        flags: f!(BUILTIN_SMT)
+    };
+
     INCOMPATIBLE "incompatible" {
         signature: s!(Time, Time -> Time),
         flags: f!(PROLOG_ONLY)
@@ -298,6 +319,11 @@ mk_builtin_funs!(
         flags: f!(MACRO)
     };
 
+    MACRO_MEMORY_CELL "macro_memory_cell" {
+        signature: s!(MemoryCell, Time, Protocol -> Bitstring),
+        flags: f!(MACRO)
+    };
+
     UNFOLD_INPUT "unfold_input" {
         signature: s!(Time, Protocol -> Bitstring),
         flags: f!(UNFOLD)
@@ -323,6 +349,10 @@ mk_builtin_funs!(
         flags: f!(UNFOLD)
     };
 
+    UNFOLD_MEMORY_CELL "unfold_memory_cell" {
+        signature: s!(MemoryCell, Time, Protocol -> Bitstring),
+        flags: f!(UNFOLD)
+    };
 
     // ~~~~~~~~~~~~~ prolog only ~~~~~~~~~~~~~~~~
 
@@ -378,7 +408,19 @@ mk_builtin_funs!(
     /// doesn't appear in `u` when `h` holds
     FRESH_NONCE "mfresh_nonce" "fresh_nonce" {
                 /* nonce -> look into -> constrains -> Bool */
-        signature: s!(Nonce, Bitstring, Bool -> Bool),
+        signature: s!(Nonce, Any, Bool -> Bool),
+        flags: f!(PROLOG_ONLY)
+    };
+
+    /// Trigger for `FRESH_NONCE` on macros.
+    FRESH_NONCE_TRIGGER "mfresh_nonce_trigger" {
+        signature: s!(Nonce, Time, Protocol, Bool -> Bool),
+        flags: f!(PROLOG_ONLY)
+    };
+
+    /// Trigger for `FRESH_NONCE` on MACRO_MEMORY_CELL.
+    FRESH_NONCE_TRIGGER_MEM "mfresh_nonce_trigger_mem" {
+        signature: s!(Nonce, Time, Protocol, Bool, MemoryCell -> Bool),
         flags: f!(PROLOG_ONLY)
     };
 
@@ -429,6 +471,11 @@ mk_builtin_funs!(
 
     CURRENT_STEP "current_step" {
         signature: s!(() -> Time),
+        flags: f!(PROLOG_ONLY)
+    };
+
+    BOUND_ANDS "bound_ands" {
+        signature: s!(Bool, Bool -> Bool),
         flags: f!(PROLOG_ONLY)
     };
 
@@ -514,6 +561,11 @@ mk_builtin_funs!(
         flags: f!(PROLOG_ONLY | SORT)
     };
 
+    BOOL_SORT "bool_sort" {
+        signature: s!(() -> Any),
+        flags: f!(PROLOG_ONLY | SORT)
+    };
+
     IS_INDEX "is_index" {
         signature: s!(Index -> Index),
         flags: f!(PROLOG_ONLY)
@@ -563,3 +615,36 @@ mk_builtin_funs!(
 
 
 );
+
+pub(crate) fn mk_scheme_lib() -> String {
+    use std::fmt::Write;
+    let mut module = String::new();
+    let mut wrapped = String::new();
+
+    module.push_str("(provide eql <> ");
+    for (name, fun) in PARSING_PAIRS.iter() {
+        let fun_name = &fun.name;
+
+        writeln!(module, "{name}").unwrap();
+        writeln!(
+            wrapped,
+            "(define {name} (register-function ___pre_${fun_name}))"
+        )
+        .unwrap();
+    }
+    writeln!(module, ")").unwrap();
+    writeln!(
+        module,
+        "
+        (require-builtin ccsa/ll/builtin-functions as ___pre_$)
+        (require \"ccsa/function\") 
+
+        {wrapped}
+        (define (eql a b) (eq (bitstring-length a) (bitstring-length b)))
+        (define <> incompatible)
+        "
+    )
+    .unwrap();
+    trace!("builtin function scheme:\n{module}");
+    module
+}

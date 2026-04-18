@@ -1,12 +1,14 @@
 use std::fmt::Debug;
 
+use anyhow::ensure;
 use bon::bon;
 use itertools::Itertools;
 use utils::implvec;
 
+use crate::libraries::CryptographicAssumption;
 use crate::problem::publish::NoncePublicSearchState;
-use crate::protocol::Protocol;
-use crate::terms::{CryptographicAssumption, Formula, Function, FunctionCollection, Rewrite};
+use crate::protocol::{MemoryCell, Protocol};
+use crate::terms::{Formula, Function, FunctionCollection, Rewrite};
 use crate::{Configuration, MSmt};
 
 mod analysis;
@@ -14,7 +16,7 @@ pub(crate) use analysis::CVRuleTrait;
 pub use analysis::{PAnalysis, PRule, RcRule};
 
 mod state;
-pub use state::ProblemState;
+pub use state::{ProblemState, ProblemStateLib};
 
 mod constrainst;
 pub use constrainst::{BoundStep, ConstrainOp, Constrains};
@@ -37,6 +39,8 @@ mod checkpoint;
 mod publish;
 pub use publish::PublicTerm;
 
+pub mod cache;
+
 /// A problem for the solver to solve
 ///
 /// This struct contains all the information needed to run the solver.
@@ -50,6 +54,7 @@ pub struct Problem {
     ///
     /// The vector must be at least 2 long
     protocols: Vec<Protocol>,
+    memory_cells: Vec<MemoryCell>,
     /// The functions
     function: FunctionCollection,
 
@@ -61,18 +66,15 @@ pub struct Problem {
     /// Extra rewrites to add to the solver
     extra_rewrite: Vec<Rewrite>,
     /// Extra SMT formulas to add to the solver
-    extra_smt: Vec<MSmt>,
-
-    /// cache for the smt prelude
-    smt_prelude: Option<Vec<MSmt>>,
+    extra_smt: Vec<MSmt<'static>>,
 
     /// the current step in the run (if any)
     current_step: Option<CurrentStep>,
 
-    /// a cache for the quantifiers
-    quantifier_cache: Vec<(Formula, Function)>,
-
     pub state: ProblemState,
+
+    /// random data to store somewhere
+    pub cache: cache::Cache,
 
     constrains: Vec<Constrains>,
 
@@ -81,6 +83,7 @@ pub struct Problem {
     /// Terms that are "public"
     public_terms: Vec<PublicTerm>,
 
+    /// The thing that learn and "publish" nonce without user input
     nonce_finder: NoncePublicSearchState,
 }
 
@@ -100,11 +103,18 @@ impl Problem {
     /// This function checks that all the protocols are compatible with each other.
     /// Two protocols are compatible if they have the same steps and the same
     /// variables in each step.
-    pub fn valid(&self) -> bool {
-        self.protocols
-            .iter()
-            .tuple_windows()
-            .all(|(a, b)| Protocol::are_compatible(a, b))
+    pub fn valid(&self) -> anyhow::Result<()> {
+        for p in self.protocols() {
+            p.is_valid(self)?;
+        }
+
+        for (a, b) in self.protocols().iter().tuple_windows() {
+            ensure!(
+                Protocol::are_compatible(a, b),
+                "{a} and {b} should be compatible"
+            )
+        }
+        Ok(())
     }
 }
 
@@ -116,7 +126,6 @@ impl Problem {
     #[builder(builder_type = ProblemBuilder)]
     pub fn new(
         #[builder(field = Self::default_cryptography())] cryptography: Vec<CryptographicAssumption>,
-        #[builder(field = None)] smt_prelude: Option<Vec<MSmt>>,
         /// The configuration (e.g., cli arguments and such)
         #[builder(default)]
         config: Configuration,
@@ -125,6 +134,7 @@ impl Problem {
         /// The vector must be at least 2 long
         #[builder(with = <_>::from_iter, default = vec![])]
         protocols: Vec<Protocol>,
+        #[builder(with = <_>::from_iter, default = vec![])] memory_cells: Vec<MemoryCell>,
         /// The constrains on the steps
         #[builder(with = <_>::from_iter, default = vec![])]
         constrains: Vec<Constrains>,
@@ -134,20 +144,20 @@ impl Problem {
 
         #[builder(with = <_>::from_iter, default = vec![])] extra_rules: Vec<RcRule>,
         #[builder(with = <_>::from_iter, default = vec![])] extra_rewrite: Vec<Rewrite>,
-        #[builder(with = <_>::from_iter, default = vec![])] extra_smt: Vec<MSmt>,
+        #[builder(with = <_>::from_iter, default = vec![])] extra_smt: Vec<MSmt<'static>>,
     ) -> Self {
         Self {
             config,
             protocols,
+            memory_cells,
             function,
             cryptography,
             extra_rules,
             extra_rewrite,
             extra_smt,
-            smt_prelude,
             current_step: None,
-            quantifier_cache: vec![],
             state: Default::default(),
+            cache: Default::default(),
             constrains,
             report: Default::default(),
             public_terms: Default::default(),

@@ -1,20 +1,20 @@
 #[cfg(feature = "sync")]
 use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
 use std::fmt::{Debug, Display};
 #[cfg(feature = "sync")]
 use std::ops::DerefMut;
 use std::ops::{ControlFlow, Deref};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::result;
 use std::str::FromStr;
 #[cfg(feature = "sync")]
 use std::sync::{Arc, RwLock};
+use std::{default, result};
 
 use anyhow::{Context, anyhow, ensure};
-use bon::bon;
+use bon::{bon, builder};
 use colored::{ColoredString, Colorize};
 // use eclassmap::{ECallMap, Entry};
 use egg::{
@@ -59,7 +59,7 @@ pub struct Program<L: Language, N: Analysis<L>, R = DRule<L, N>> {
 }
 
 /// Represents the status of a proof attempt for a given e-class.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[allow(dead_code)]
 pub(crate) enum Status<R> {
     /// The proof attempt succeeded, containing the proof item.
@@ -67,10 +67,12 @@ pub(crate) enum Status<R> {
     /// The proof attempt failed.
     False,
     /// The proof attempt is currently in progress.
+    #[default]
     InProgress,
 }
 
 pub trait Rebuildable<L: Language, N: Analysis<L>> {
+    #[allow(unused)]
     fn rebuild(&mut self, egraph: &EGraph<L, N>) {}
 }
 
@@ -198,18 +200,6 @@ where
         self.extend([eq_rule], []);
     }
 
-    // /// convenient way to add a [Rule]
-    // /// Adds a boxed `Rule` to the program.
-    // pub fn add_boxed_rule(&mut self, rule: Box<dyn Rule<L, N>>) {
-    //     self.extend([], [rule]);
-    // }
-
-    // /// convenient way to add a [Rule]
-    // /// Adds a `Rule` to the program.
-    // pub fn add_rule<R: Rule<L, N> + 'static>(&mut self, rule: R) {
-    //     self.add_boxed_rule(Box::new(rule))
-    // }
-
     /// activate/deactivate explaination for the [EGraph]
     ///
     /// refer to [egg]'s documentation to know more
@@ -232,6 +222,12 @@ where
         &self.eq_rules
     }
 
+    /// clears the rules and returns the old one following the semantics of [`std::mem::take`]
+    pub fn take_eq_rules(&mut self) -> Vec<Rewrite<L, N>> {
+        self.eq_rules.clear();
+        ::std::mem::take(&mut self.eq_rules)
+    }
+
     /// Sets the equality rewrite rules.
     #[cfg(debug_assertions)]
     pub fn set_eq_rules(&mut self, new: Vec<Rewrite<L, N>>)
@@ -251,10 +247,7 @@ where
 
     /// Sets the equality rewrite rules.
     #[cfg(not(debug_assertions))]
-    pub fn set_eq_rules(&mut self, new: Vec<Rewrite<L, N>>)
-    where
-        L: Display,
-    {
+    pub fn set_eq_rules(&mut self, new: Vec<Rewrite<L, N>>) {
         self.egraph_mut().clean = false;
         self.eq_rules = new;
     }
@@ -282,12 +275,63 @@ where
     pub fn get_hit_rate(&self) -> f64 {
         (self.num_memo_hits as f64) / (self.total_calls as f64)
     }
+
+    pub fn forget(&mut self, id: Id) {
+        if let hash_map::Entry::Occupied(occupied_entry) = self.memo.entry(id)
+            && !occupied_entry.get().is_in_progress()
+        {
+            occupied_entry.remove();
+        }
+    }
 }
 
 fn print_bool(b: bool) -> ColoredString {
     match b {
         true => "true".green(),
         false => "false".red(),
+    }
+}
+
+#[bon]
+impl<L, N, R> Program<L, N, R>
+where
+    L: Language + Display,
+    N: Analysis<L>,
+    R: Rule<L, N, R> + Clone,
+{
+    #[builder]
+    fn check_and_set_memo(
+        &mut self,
+        goal: egg::Id,
+        status: Status<R>,
+        #[builder(default = false)] log: bool,
+        #[builder(default = false)] track_hits: bool,
+    ) -> Option<bool> {
+        assert!(self.is_memo_enabled());
+
+        use std::collections::hash_map::Entry;
+        match self.memo_mut().entry(goal) {
+            Entry::Occupied(occupied_entry) if occupied_entry.get().is_in_progress() => {
+                if log {
+                    mtrace!(self, RULE, "⏩ skipping {goal:}: {}", "loop".red());
+                }
+                Some(false)
+            }
+            Entry::Occupied(occupied_entry) => {
+                let res = occupied_entry.get().as_bool();
+                if track_hits {
+                    self.num_memo_hits += 1;
+                }
+                if log {
+                    mtrace!(self, RULE, "⏩ skipping {goal:}: {}", print_bool(res));
+                }
+                Some(res)
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(status.into());
+                None
+            }
+        }
     }
 }
 
@@ -336,36 +380,10 @@ where
         }
     }
 
-    fn check_and_set_memo(&mut self, goal: egg::Id, status: Status<R>, log: bool) -> Option<bool> {
-        assert!(self.is_memo_enabled());
-
-        use std::collections::hash_map::Entry;
-        match self.memo_mut().entry(goal) {
-            Entry::Occupied(occupied_entry) if occupied_entry.get().is_in_progress() => {
-                if log {
-                    mtrace!(self, RULE, "⏩ skipping {goal:}: {}", "loop".red());
-                }
-                Some(false)
-            }
-            Entry::Occupied(occupied_entry) => {
-                let res = occupied_entry.get().as_bool();
-                self.num_memo_hits += 1;
-                if log {
-                    mtrace!(self, RULE, "⏩ skipping {goal:}: {}", print_bool(res));
-                }
-                Some(res)
-            }
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(status.into());
-                None
-            }
-        }
-    }
-
     /// same as [Self::run_expr] but starting from an [Id] in the [EGraph]
     pub fn run(&mut self, base_goal: egg::Id, fuel: u64) -> bool {
         self.total_calls += 1;
-        let ndepth = u64::MAX - fuel;
+        let ndepth = u64::MAX - fuel; // FIXME - why is this not used ?
         let gtmp = if self.is_tracing_enabled(DebugLevel::RULE) {
             let g = self.egraph().id_to_expr(base_goal);
             println!("({base_goal:}) selecting {}", g.pretty(80));
@@ -391,7 +409,13 @@ where
             // check memoization
             if self.is_memo_enabled()
                 && (canonicalized || i == 0)
-                && let Some(res) = self.check_and_set_memo(goal, Status::InProgress, true)
+                && let Some(res) = self
+                    .check_and_set_memo()
+                    .goal(goal)
+                    .status(Status::InProgress)
+                    .log(true)
+                    .track_hits(true)
+                    .call()
             {
                 // yes side effects ^^', this is here because I don't
                 // want break out of a loop that came from a rewrite mid proof
@@ -423,42 +447,7 @@ where
             self.check_memo_goal(goal);
 
             if self.is_tracing_enabled(DebugLevel::RULE) && !search.is_impossible() {
-                mtrace!(
-                    self,
-                    RULE,
-                    "({goal}) new goals\n{}",
-                    search
-                        .inner
-                        .iter()
-                        .map(|d| format!(
-                            "\t - [{}]",
-                            d.iter()
-                                .map(|c| format!("({})", self.egraph().find(*c)))
-                                .join(", ")
-                        ))
-                        .join("\n")
-                );
-
-                if cfg!(debug_assertions) {
-                    eprintln!("({goal}) new goals prefetch:");
-
-                    for d in search.inner.iter() {
-                        eprint!("\t - [");
-                        for c in d {
-                            let tmp = self.memo.get(c).map(|c| c.0.read().unwrap());
-                            match tmp {
-                                Some(x) => match x.deref() {
-                                    Status::False => eprint!("{c} ({})", "false".red()),
-                                    Status::True(_) => eprint!("{c} ({})", "true".green()),
-                                    Status::InProgress => eprint!("{c} ({})", "loop".red()),
-                                },
-                                None => eprint!("{c} (?)"),
-                            }
-                            eprint!(", ")
-                        }
-                        eprintln!("]");
-                    }
-                }
+                self.trace_goal_status(goal, &search);
             }
 
             self.check_memo_goal(goal);
@@ -487,7 +476,10 @@ where
         };
 
         canonicalize_id_mut(&mut goal, self.egraph());
-        self.check_and_set_memo(goal, Status::InProgress, true);
+        self.check_and_set_memo()
+            .goal(goal)
+            .status(Status::InProgress)
+            .call();
 
         debug_assert!(
             !self.is_memo_enabled() || self.memo.contains_key(&goal),
@@ -520,6 +512,45 @@ where
         self.check_proof_consistency().unwrap();
 
         result
+    }
+
+    fn trace_goal_status(&self, goal: Id, search: &Dependancy) {
+        mtrace!(
+            self,
+            RULE,
+            "({goal}) new goals\n{}",
+            search
+                .inner
+                .iter()
+                .map(|d| format!(
+                    "\t - [{}]",
+                    d.iter()
+                        .map(|c| format!("({})", self.egraph().find(*c)))
+                        .join(", ")
+                ))
+                .join("\n")
+        );
+
+        if cfg!(debug_assertions) {
+            eprintln!("({goal}) new goals prefetch:");
+
+            for d in search.inner.iter() {
+                eprint!("\t - [");
+                for c in d {
+                    let tmp = self.memo.get(c).map(|c| c.0.read().unwrap());
+                    match tmp {
+                        Some(x) => match x.deref() {
+                            Status::False => eprint!("{c} ({})", "false".red()),
+                            Status::True(_) => eprint!("{c} ({})", "true".green()),
+                            Status::InProgress => eprint!("{c} ({})", "loop".red()),
+                        },
+                        None => eprint!("{c} (?)"),
+                    }
+                    eprint!(", ")
+                }
+                eprintln!("]");
+            }
+        }
     }
 
     #[inline]
@@ -702,7 +733,7 @@ where
     let dot = tempfile::Builder::new()
         .prefix("egraph_")
         .suffix(".dot")
-        .keep(true)
+        .disable_cleanup(true)
         .tempfile()?;
 
     egraph.dot().to_dot(&dot)?;
@@ -732,6 +763,7 @@ impl<R> MemoStatus<R> {
     }
 
     /// Sets the underlying `Status`.
+    #[allow(unused)]
     pub fn set(&self, status: Status<R>) {
         *self.borrow_mut() = status
     }

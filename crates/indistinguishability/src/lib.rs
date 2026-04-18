@@ -33,6 +33,15 @@ macro_rules! declare_trace {
     };
 }
 
+macro_rules! debug_assert_ok {
+    ($e:expr) => {
+        #[cfg(debug_assertions)]
+        {
+            $e.unwrap()
+        }
+    };
+}
+
 // ~~~~~~~~~~~~~~~ modules ~~~~~~~~~~~~~~~~~~
 
 /// Defines the problem structure and related functionalities.
@@ -51,11 +60,11 @@ pub mod terms; // <- first for macros
 /// Contains utility functions and helpers.
 pub(crate) mod utils;
 /// Re-exports functions for initializing the engine and registering input handlers.
-pub use input::{init_engine, register};
+pub use input::{init_engine, mk_modules};
 /// Defines the configuration structures for the crate.
 mod configuration;
 /// Re-exports the main Configuration structure for the crate.
-pub use configuration::{Commands, Configuration};
+pub use configuration::{Configuration, RunningMode};
 
 use crate::problem::{PAnalysis, RcRule};
 use crate::terms::Variable;
@@ -85,10 +94,10 @@ pub struct MSmtParam;
 
 /// A formula in the SMT solver
 /// A formula in the SMT solver
-pub type MSmtFormula = SmtFormula<MSmtParam>;
+pub type MSmtFormula<'a> = SmtFormula<'a, MSmtParam>;
 /// The SMT solver
 /// The SMT solver
-pub type MSmt = Smt<MSmtParam>;
+pub type MSmt<'a> = Smt<'a, MSmtParam>;
 
 pub type CVProgram<'a, R = RcRule> = Program<Lang, PAnalysis<'a>, R>;
 

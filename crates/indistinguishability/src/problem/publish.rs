@@ -1,7 +1,12 @@
+use std::cell::RefCell;
+
 use anyhow::{Context, ensure};
 use itertools::{Itertools, chain};
-use logic_formula::AsFormula;
+use logic_formula::iterators::AllTermsIterator;
+use logic_formula::outers::{RefCellPile, RefPile};
+use logic_formula::{AsFormula, IteratorHelper};
 use rustc_hash::FxHashSet;
+use utils::powerset::{PowersetReverse, PowersetReverseIter};
 
 use crate::Problem;
 use crate::protocol::Step;
@@ -41,7 +46,7 @@ impl Problem {
             "All variables in a published terms should be bound"
         );
 
-        self.clear_smt_prelude();
+        self.cache.smt.force_reset();
 
         self.public_terms.push(term.clone());
         let n = self.num_steps()?.into();
@@ -106,20 +111,47 @@ impl Default for NoncePublicSearchState {
 /// Generates a non-stupid order of set nonce to try to publish.
 #[define_opaque(MI)]
 fn mk_iterator(candidates: FxHashSet<Function>, pbl: &Problem) -> MI {
-    let to_test_first = candidates
-        .into_iter()
-        .powerset()
-        .collect_vec()
-        .into_iter()
-        .rev();
+    let already_used: FxHashSet<_> = mk_blocked_by_published_iter(pbl);
+
+    let filter = move |n: &Function| !(n.is_fresh() || already_used.contains(n));
+
+    let to_test_first = candidates.into_iter().filter(&filter).collect_vec();
     let others = pbl
         .functions()
         .nonces()
+        .filter(|&x| filter(x))
         .cloned()
-        .collect_vec()
-        .into_iter()
-        .powerset();
+        .collect_vec();
+
+    let to_test_first = PowersetReverse::new(to_test_first);
+    let others = PowersetReverse::new(others);
     chain!(to_test_first, others)
         .filter(|x| !x.is_empty())
         .unique()
+}
+
+fn mk_blocked_by_published_iter<I: FromIterator<Function>>(pbl: &Problem) -> I {
+    let pile = RefCell::new(Vec::new());
+
+    pbl.protocols()
+        .iter()
+        .flat_map(|p| p.steps().iter())
+        .filter(|s| s.id.is_publish_step())
+        .map(|s| &s.msg)
+        .flat_map(|f| {
+            let mut iter = RefCellPile::new(&pile, AllTermsIterator);
+            iter.as_mut().push_child(f, ());
+            iter
+        })
+        .filter_map(|f| {
+            if let Formula::App { head, .. } = f
+                && head.signature.output == Sort::Nonce
+            {
+                Some(head)
+            } else {
+                None
+            }
+        })
+        .cloned()
+        .collect()
 }

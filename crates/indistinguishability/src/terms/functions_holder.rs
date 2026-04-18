@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use itertools::chain;
 use log::trace;
-use steel::rvals::CustomType;
 
 use super::{BUILTINS, Function, PARSING_PAIRS};
 use crate::terms::Quantifier;
@@ -92,6 +91,11 @@ impl FunctionCollection {
         self.functions.iter().filter(|f| f.is_nonce())
     }
 
+    /// List all the reifistered memory cells
+    pub fn memory_cells(&self) -> impl Iterator<Item = &Function> {
+        self.functions.iter().filter(|f| f.is_memory_cell())
+    }
+
     /// Lists all the registered protocols
     pub fn protocols(&self) -> impl Iterator<Item = &Function> {
         self.functions.iter().filter(|f| f.is_protocol())
@@ -153,6 +157,7 @@ impl FunctionCollection {
 
         temporary_functions.clear();
         temporary_quantifiers.clear();
+        self.garbage_collect();
         assert!(self.valid());
     }
 
@@ -163,20 +168,10 @@ impl FunctionCollection {
         )
     }
 
-    pub(crate) fn truncate_temporary(&mut self, (len_f, len_q): (usize, usize)) {
-        let Self {
-            temporary_functions,
-            temporary_quantifiers,
-            map_function: _,
-            ..
-        } = self;
-
-        temporary_quantifiers.truncate(len_q);
-        let funs = temporary_functions.drain(len_f..);
-
-        for _f in funs {
-            // map_function.remove(f.name());
-        }
+    pub fn garbage_collect(&mut self) {
+        unstable_retain(&mut self.functions, |f| !f.is_garabage_collectable());
+        self.map_function
+            .retain(|_, f| !f.is_garabage_collectable());
     }
 }
 
@@ -246,6 +241,21 @@ impl QuantifierIndex {
     /// Retrieves an array slice of quantifiers (either temporary or constant).
     pub fn get_array(self, functions: &FunctionCollection) -> &[Quantifier] {
         functions.quantifiers(self.temporary)
+    }
+}
+
+/// Same as [Vec::retain] but doesn't keep the order. Faster for sparse removals
+fn unstable_retain<T>(vec: &mut Vec<T>, mut pred: impl FnMut(&T) -> bool) {
+    let mut i = 0;
+    while i < vec.len() {
+        if pred(&vec[i]) {
+            i += 1; // Element passed, move to the next one
+        } else {
+            // Remove the element and replace it with the last element.
+            // We do NOT increment `i`, so the newly swapped-in element
+            // is evaluated on the next iteration.
+            vec.swap_remove(i);
+        }
     }
 }
 

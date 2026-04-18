@@ -24,3 +24,9 @@ pub mod ereturn;
 pub mod impossible;
 
 pub mod transposer;
+
+pub mod powerset;
+
+pub mod reservable;
+
+pub mod sliceidx;

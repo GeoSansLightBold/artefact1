@@ -3,7 +3,7 @@
 > It is now maintained here as part of the monorepo.
 > The history of the original project is not included in this repository.
 >
-> I'll will update somewhat regularily my fork to reflect the changes made here. Note that there are no real plan to merge anything back into [egg](https://github.com/egraphs-good/egg) as most of the changes are to done to expose justifiably hidden interals.
+> I'll will update somewhat regularily the fork to reflect the changes made here. Note that there are no real plan to merge anything back into [egg](https://github.com/egraphs-good/egg) as most of the changes are to done to expose justifiably hidden interals.
 
 # <img src="doc/egg.svg" alt="egg logo" height="40" align="left"> egg: egraphs good
 

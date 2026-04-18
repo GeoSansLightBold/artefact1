@@ -1,6 +1,17 @@
-(require "cryptovampire/v2")
 (require "../save-results.scm")
-(require-builtin cryptovampire as cv-)
+(require "ccsa/function")
+(require "ccsa/builtin-functions")
+(require "ccsa/cryptography")
+(require "ccsa/protocol")
+(require "ccsa/solver")
+(require "ccsa/sort")
+(require "ccsa/formula")
+(require "ccsa/signature")
+(require-builtin ccsa/ll/pbl as pbl.)
+(require-builtin ccsa/ll/configuration as config.)
+(require-builtin ccsa/ll as b.)
+(require-builtin ccsa/ll/report as report.)
+(require-builtin ccsa/ll/rewrite as rw.)
 
 (define pbl (mk-problem 'x))
 
@@ -14,15 +25,13 @@
 (define-function ko pbl Bitstring)
 (define-function k1 pbl (Index) -> Nonce)
 (define-function k2 pbl (Index Index) -> Nonce)
-(define-function _n pbl (Index Index) -> Nonce)
-(define-function _nr pbl (Index) -> Nonce)
+(define-function n pbl (Index Index) -> Nonce)
+(define-function nr pbl (Index) -> Nonce)
 
 (define-alias _mk pbl (Index Index Protocol) Nonce
-  [ ([ (i Index) (j Index) ] (i j p1) -> (k1 i))
-  ([ (i Index) (j Index) ] (i j p2) -> (k2 i j)) ])
+  [ ([ (i Index) (j Index) ] (i j p1) -> ((unwrap-nonce k1) i))
+  ([ (i Index) (j Index) ] (i j p2) -> ((unwrap-nonce k2) i j)) ])
 
-(define n (wrap-nonce _n))
-(define nr (wrap-nonce _nr))
 (define mk (wrap-nonce _mk))
 
 
@@ -30,43 +39,49 @@
   (declare-step pbl "tag" (list Index Index)
     (step p1
       (lambda _ mtrue)
-      (lambda (in i j)
-        (tuple (n i j) (mhash (tuple in (n i j)) (mk i j p1)))))
+      (lambda (in i j . _)
+        (tuple (n i j) (mhash (tuple in (n i j)) (mk i j p1))))
+      empty-assignements)
     (step p2
       (lambda _ mtrue)
-      (lambda (in i j)
-        (tuple (n i j) (mhash (tuple in (n i j)) (mk i j p2)))))))
+      (lambda (in i j . _)
+        (tuple (n i j) (mhash (tuple in (n i j)) (mk i j p2))))
+      empty-assignements)))
 
 (define reader1
   (declare-step pbl "reader1" (list Index)
-    (step p1 (lambda _ mtrue) (lambda (in i) (nr i)))
-    (step p2 (lambda _ mtrue) (lambda (in i) (nr i)))))
+    (step p1 (lambda _ mtrue) (lambda (in i . _) (nr i)) empty-assignements)
+    (step p2 (lambda _ mtrue) (lambda (in i . _) (nr i)) empty-assignements)))
 
 (define rs
   (declare-step pbl "reader_success" (list Index Index)
     (step p1
-      (lambda (in i j)
+      (lambda (in i j . _)
         (eq (tuple (nr i) (sel2of2 in)) (mhash (sel1of2 in) (mk i j p1))))
-      (lambda _ ok))
+      (lambda _ ok)
+      empty-assignements)
     (step p2
-      (lambda (in i j)
+      (lambda (in i j . _)
         (eq (tuple (nr i) (sel2of2 in)) (mhash (sel1of2 in) (mk i j p2))))
-      (lambda _ ok))))
+      (lambda _ ok)
+      empty-assignements)))
 
 (define rf
   (declare-step pbl "reader_fail" (list Index)
     (step p1
-      (lambda (in i)
+      (lambda (in i . _)
         (mnot (exists ((j Index))
             (eq (tuple (nr i) (sel2of2 in))
               (mhash (sel1of2 in) (mk i j p1))))))
-      (lambda _ ko))
+      (lambda _ ko)
+      empty-assignements)
     (step p2
-      (lambda (in i)
+      (lambda (in i . _)
         (mnot (exists ((j Index))
             (eq (tuple (nr i) (sel2of2 in))
               (mhash (sel1of2 in) (mk i j p2))))))
-      (lambda _ ko))))
+      (lambda _ ko)
+      empty-assignements)))
 
 (initialize-as-prf prf mhash)
 
@@ -75,7 +90,7 @@
     (t Time)
     (p Protocol))
   (let [ (in (macro_input t p)) (int (lambda (j) (macro_msg (tag i j) p))) ]
-    (cv-add-rewrite pbl (cv-mk-rewrite "lemma-2" (list i t j p)
+    (add-rewrite pbl (rw.new "lemma-2" (list i t j p)
         (eq (tuple (nr i) (sel2of2 in)) (mhash (sel1of2 in) (mk i j p)))
         (exists ((j Index))
           (cand
@@ -90,12 +105,13 @@
 (add-constrain pbl (i j) (<> (rs i j) (rf i)))
 
 ;; configuration
-; (cv-set-trace pbl #t)
-(cv-set-vampire-timeout pbl (cv-string->duration "10s"))
+; (config.set_trace pbl #t)
+(define default-timeout (b.string->duration "300ms"))
+(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
 
 (if (run pbl p1 p2)
   (displayln "success")
   (error "failed hash-lock"))
 
-(displayln (cv-print-report (cv-get-report pbl)))
+(displayln (report.print-report (pbl.get-report pbl)))
 (save-results  "hash-lock" pbl)

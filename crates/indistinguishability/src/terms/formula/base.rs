@@ -79,7 +79,7 @@ impl Formula {
             } => Some(Sort::Bitstring),
             Formula::Quantifier { .. } => Some(Sort::Bool),
             Formula::App { head, .. } => Some(head.signature.output),
-            Formula::Var(_) => None,
+            Formula::Var(var) => var.get_sort(),
         }
     }
 
@@ -118,22 +118,6 @@ impl Formula {
     #[must_use]
     pub fn is_quantifier(&self) -> bool {
         matches!(self, Self::Quantifier { .. })
-    }
-}
-
-fn find<'a>(
-    var: &'a Variable,
-    subst: &'a FxHashMap<Variable, Formula>,
-    seen: &mut Vec<Variable>,
-) -> Result<Either<&'a Formula, &'a Variable>, &'a Variable> {
-    match subst.get(var) {
-        Some(Formula::Var(nv)) if seen.contains(nv) => Err(var),
-        Some(Formula::Var(var)) => {
-            seen.push(var.clone());
-            find(var, subst, seen)
-        }
-        Some(x) => Ok(Either::Left(x)),
-        _ => Ok(Either::Right(var)),
     }
 }
 

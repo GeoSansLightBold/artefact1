@@ -7,6 +7,8 @@ use crate::terms::Variable;
 mod unification;
 pub use unification::Substitution;
 
+mod opmisations;
+
 // =========================================================
 // ==================== manipulation =======================
 // =========================================================
@@ -96,6 +98,10 @@ impl Formula {
     /// Make all the variables apearing in `self` unique to `self`
     pub fn alpha_rename(&self) -> Self {
         self.alpha_rename_if_with(&mut FxHashMap::default(), &mut |_| true)
+    }
+
+    pub fn alpha_rename_with<'a>(&'a self, subst: &mut FxHashMap<&'a Variable, Variable>) -> Self {
+        self.alpha_rename_if_with(subst, &mut |_| true)
     }
 
     /// Apply a specific variable substitution

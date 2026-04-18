@@ -1,18 +1,22 @@
 (provide
-  save-results)
-(require-builtin cryptovampire as cv-)
-(require-builtin "steel/base")
+  save-results scale-timeout)
+(require-builtin ccsa/ll/pbl as pbl->)
+(require-builtin ccsa/ll/report as report->)
+(require-builtin ccsa/ll/configuration as config->)
+(require-builtin ccsa/ll as b.)
+; (require-builtin steel/base)
+
+; (define aaaa duration->millis )
 
 
 (define (print-row file . args)
   (begin
     (for-each (lambda (x)
         (begin
-          (if (string? x)
-            (write-string x file)
-            (if (cv-duration? x)
-              (write (duration->millis x) file)
-              (write x file)))
+          (cond
+            [ (string? x) (write-string x file) ]
+            [ (b.duration? x)  (write (b.duration->millis x) file) ]
+            [else (write x file) ])
           (write-string "," file)))
       args)
     (write-string "\n" file)))
@@ -25,20 +29,24 @@
         file))
     (let [ (file (open-output-file file)) ]
       (begin
-        (print-row file "name" "runtime" "vampire time" "total" "hits" "hitrate" "timeout")
+        (print-row file "name" "runtime" "vampire time" "max smt" "total" "hits" "hitrate" "timeout")
         file))))
 (define get-file (let [ (env (maybe-get-env-var "RESULT")) ]
     (if (Err? env) "/tmp/results.csv" (Ok->value env))))
 
+(define scale-timeout (let [ (env (maybe-get-env-var "SCALE_TIMEOUT")) ]
+    (if (Err? env) 1.0 (string->number (Ok->value env)))))
+
 (define (save-results name pbl)
   (let* [
     (file (prepare get-file))
-    (report (cv-get-report pbl))
-    (runtime (cv-get-runtime report))
-    (vampire (cv-get-time-spent-in-vampire report))
-    (hits (cv-get-total-cache-hits report))
-    (total (cv-get-total-run-calls report))
-    (hit-rate (cv-get-hit-rate report)) 
-    (vampire-timeout (cv-vampire-timeout (cv-get-config pbl)))
+    (report (pbl->get-report pbl))
+    (runtime (report->get-runtime report))
+    (vampire (report->get-smt-time report))
+    (max-smt (report->get-max-smt-time report))
+    (hits (report->get-total-cache-hits report))
+    (total (report->get-total-run-calls report))
+    (hit-rate (report->get-hit-rate report))
+    (vampire-timeout (config->get_smt_timeout pbl))
     ]
-    (print-row file name runtime vampire total hits hit-rate vampire-timeout)))
+    (print-row file name runtime vampire max-smt total hits hit-rate vampire-timeout)))

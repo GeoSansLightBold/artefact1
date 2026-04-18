@@ -1,0 +1,183 @@
+(require "../save-results.scm")
+(require "ccsa/function")
+(require "ccsa/builtin-functions")
+(require "ccsa/cryptography")
+(require "ccsa/protocol")
+(require "ccsa/solver")
+(require "ccsa/sort")
+(require "ccsa/formula")
+(require "ccsa/signature")
+(require-builtin ccsa/ll/pbl as pbl.)
+(require-builtin ccsa/ll/configuration as config.)
+(require-builtin ccsa/ll as b.)
+(require-builtin ccsa/ll/report as report.)
+(require-builtin ccsa/ll/rewrite as rw.)
+
+(define pbl (mk-problem 'x))
+
+(define p1 (declare-protocol pbl))
+(define p2 (declare-protocol pbl))
+(define ptcls (list p1 p2))
+
+(define-function ok pbl Bitstring)
+(define-function ko pbl Bitstring)
+(define-function forwarded pbl Bitstring)
+
+(define ddh (declare-cryptography pbl))
+(define-function g pbl (ddh) Bitstring)
+(define-function mexp pbl (ddh) (Bitstring Bitstring) -> Bitstring)
+(initialize-as-ddh ddh g mexp)
+
+(define prf (declare-cryptography pbl))
+(define-function h pbl (prf) (Bitstring Bitstring) -> Bitstring)
+(initialize-as-prf prf h)
+
+(define euf-cma (declare-cryptography pbl))
+(define-function sign pbl (euf-cma) (Bitstring Bitstring) -> Bitstring)
+(define-function checksign pbl (euf-cma) (Bitstring Bitstring Bitstring) -> Bool)
+(define-function vk pbl (euf-cma) (Bitstring) -> Bitstring)
+
+(define senc (declare-cryptography pbl))
+(define-function enc pbl (senc) (Bitstring Bitstring Bitstring) -> Bitstring)
+(define-function dec pbl (senc) (Bitstring Bitstring) -> Bitstring)
+(initialize-as-senc senc enc dec)
+
+;; honest nonces
+(define-function a1 pbl Nonce)
+(define-function b1 pbl Nonce)
+(define-function k11 pbl Nonce)
+(define-function hKey pbl Nonce)
+(define-function skP pbl Nonce)
+(define-function skS pbl Nonce)
+(define-function rP pbl Nonce)
+
+;; attacker nonces
+(define-function a pbl (Index) -> Nonce)
+(define-function b pbl (Index) -> Nonce)
+
+(publish pbl ((i Index)) (mexp g (a i)))
+(publish pbl ((i Index)) (mexp g (b i)))
+; (publish pbl () (mexp g a1))
+; (publish pbl () (mexp g b1))
+(publish pbl () hKey)
+
+; (publish pbl () skP)
+; (publish pbl () rP)
+; (publish pbl () skS)
+
+;; Protocol P
+(define P1 (declare-same-step pbl "P1" ptcls '()
+    (lambda _ mtrue)
+    (lambda (p in . _) (mexp g a1))
+    empty-assignements))
+
+(define (gB p) (macro_input P2 p))
+
+(define P2 (declare-same-step pbl "P2" ptcls '()
+    (lambda _ mtrue)
+    (lambda (p in . _) ok)
+    empty-assignements))
+
+(define P3 (declare-same-step pbl "P3" ptcls '()
+    (lambda (p in . _)
+      (let [ (sidP (h (tuple (tuple (mexp g a1) (gB p)) (mexp (gB p) a1)) hKey))
+        (pkS_in (sel1of2 in))
+        (sigS (sel2of2 in)) ]
+        (cand (eq pkS_in (vk skS))
+          (checksign sidP sigS pkS_in))))
+    (lambda (p in . _)
+      (let [ (sidP (h (tuple (tuple (mexp g a1) (gB p)) (mexp (gB p) a1)) hKey)) ]
+        (enc (sign sidP skP) rP (mexp (gB p) a1))))
+    empty-assignements))
+
+(define P4_ok (declare-same-step pbl "P4_ok" ptcls '()
+    (lambda (p in . _) (cor (eq (gB p) (mexp g b1))
+        (exists ((i Index)) (eq (gB p) (mexp g (b i))))))
+    (lambda _ ok)
+    empty-assignements))
+
+(define P4_fail (declare-step pbl "P4_fail" '()
+    (step p1
+      (lambda (in . _) (mnot (cor (eq (gB p1) (mexp g b1))
+            (exists ((i Index)) (eq (gB p1) (mexp g (b i)))))))
+      (lambda _ ok)
+      empty-assignements)
+    (step p2
+      (lambda (in . _) (mnot (cor (eq (gB p2) (mexp g b1))
+            (exists ((i Index)) (eq (gB p2) (mexp g (b i)))))))
+      (lambda _ ko)
+      empty-assignements)))
+
+(add-constrain pbl () (lt P1 P2))
+(add-constrain pbl () (lt P2 P3))
+(add-constrain pbl () (lt P3 P4_ok))
+(add-constrain pbl () (lt P3 P4_fail))
+(add-constrain pbl () (<> P4_ok P4_fail))
+
+;; Protocol S
+(define S1 (declare-same-step pbl "S1" ptcls '()
+    (lambda _ mtrue)
+    (lambda (p in . _) (mexp g b1))
+    empty-assignements))
+
+(define (gP p) (macro_input S1 p))
+
+(define S2 (declare-same-step pbl "S2" ptcls '()
+    (lambda _ mtrue)
+    (lambda (p in . _)
+      (let [ (sidS (h (tuple (tuple (gP p) (mexp g b1)) (mexp (gP p) b1)) hKey)) ]
+        (tuple (vk skS) (sign sidS skS))))
+    empty-assignements))
+
+(define S3 (declare-same-step pbl "S3" ptcls '()
+    (lambda (p in . _)
+      (let [ (sidS (h (tuple (tuple (gP p) (mexp g b1)) (mexp (gP p) b1)) hKey)) ]
+        (checksign sidS (dec in (mexp (gP p) b1)) (vk skP))))
+    (lambda _ ok)
+    empty-assignements))
+
+(define S4_ok (declare-same-step pbl "S4_ok" ptcls '()
+    (lambda (p in . _) (cor (eq (gP p) (mexp g a1))
+        (exists ((i Index)) (eq (gP p) (mexp g (a i))))))
+    (lambda _ ok)
+    empty-assignements))
+
+(define S4_fail (declare-step pbl "S4_fail" '()
+    (step p1
+      (lambda (in . _) (mnot (cor (eq (gP p1) (mexp g a1))
+            (exists ((i Index)) (eq (gP p1) (mexp g (a i)))))))
+      (lambda _ ok)
+      empty-assignements)
+    (step p2
+      (lambda (in . _) (mnot (cor (eq (gP p2) (mexp g a1))
+            (exists ((i Index)) (eq (gP p2) (mexp g (a i)))))))
+      (lambda _ ko)
+      empty-assignements)))
+
+(add-constrain pbl () (lt S1 S2))
+(add-constrain pbl () (lt S2 S3))
+(add-constrain pbl () (lt S3 S4_ok))
+(add-constrain pbl () (lt S3 S4_fail))
+(add-constrain pbl () (<> S4_ok S4_fail))
+
+(bind ((p Protocol))
+  (add-rewrite pbl (rw.new "lemma-P" (list p)
+      (cand (macro_exec P4_fail p) (macro_cond P4_fail p))
+      mfalse)))
+
+(bind ((p Protocol))
+  (add-rewrite pbl (rw.new "lemma-S" (list p)
+      (cand (macro_exec S4_fail p) (macro_cond S4_fail p))
+      mfalse)))
+
+(define default-timeout (b.string->duration "150ms"))
+(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
+(config.set_guided_nonce_search pbl #t)
+
+(if (run pbl p1 p2)
+  (displayln "success")
+  (error "failed ssh-forward-part1-auth"))
+; #t
+
+(displayln (report.print-report (pbl.get-report pbl)))
+(save-results "ssh-forward-part1-auth" pbl)

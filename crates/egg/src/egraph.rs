@@ -580,7 +580,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
     }
 
     /// Creates a [`Dot`] to visualize this egraph. See [`Dot`].
-    pub fn dot(&self) -> Dot<L, N> {
+    pub fn dot(&self) -> Dot<'_, L, N> {
         Dot {
             egraph: self,
             config: vec![],
@@ -1391,13 +1391,13 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
     ///
     /// # Example
     /// ```
-    /// use egg::{*, SymbolLang as S};
+    /// use egg::{SymbolLang as S, *};
     /// let mut egraph = EGraph::<S, ()>::default();
     /// let x = egraph.add(S::leaf("x"));
     /// let y = egraph.add(S::leaf("y"));
     /// let ax = egraph.add_expr(&"(+ a x)".parse().unwrap());
     /// let ay = egraph.add_expr(&"(+ a y)".parse().unwrap());
-
+    ///
     /// // Union x and y
     /// egraph.union(x, y);
     /// // Classes: [x y] [ax] [ay] [a]

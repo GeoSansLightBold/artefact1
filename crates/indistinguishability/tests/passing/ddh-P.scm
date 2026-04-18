@@ -1,6 +1,17 @@
-(require "cryptovampire/v2")
 (require "../save-results.scm")
-(require-builtin cryptovampire as cv-)
+(require "ccsa/function")
+(require "ccsa/builtin-functions")
+(require "ccsa/cryptography")
+(require "ccsa/protocol")
+(require "ccsa/solver")
+(require "ccsa/sort")
+(require "ccsa/formula")
+(require "ccsa/signature")
+(require-builtin ccsa/ll/pbl as pbl.)
+(require-builtin ccsa/ll/configuration as config.)
+(require-builtin ccsa/ll as b.)
+(require-builtin ccsa/ll/report as report.)
+(require-builtin ccsa/ll/rewrite as rw.)
 
 (define pbl (mk-problem 'x))
 
@@ -19,17 +30,11 @@
 (define-function g pbl (ddh) Bitstring)
 (define-function mexp pbl (ddh) (Bitstring Bitstring) -> Bitstring)
 
-(define-function _a pbl (Index) -> Nonce)
-(define-function _b pbl (Index) -> Nonce)
-(define-function _k pbl (Index Index) -> Nonce)
-(define-function _skP pbl Nonce)
-(define-function _skS pbl Nonce)
-
-(define a (wrap-nonce _a))
-(define b (wrap-nonce _b))
-(define k (wrap-nonce _k))
-(define skP (wrap-nonce _skP))
-(define skS (wrap-nonce _skS))
+(define-function a pbl (Index) -> Nonce)
+(define-function b pbl (Index) -> Nonce)
+(define-function k pbl (Index Index) -> Nonce)
+(define-function skP pbl Nonce)
+(define-function skS pbl Nonce)
 
 (define empty-cond (lambda _ mtrue))
 
@@ -40,65 +45,73 @@
 (define P1
   (declare-step pbl "P1" (list Index)
     (step p1 empty-cond
-      (lambda (in i)
-        (tuple (vk skP) (mexp g (a i)))))
+      (lambda (in i . _)
+        (tuple (vk skP) (mexp g (a i))))
+      empty-assignements)
     (step p2 empty-cond
-      (lambda (in i)
-        (tuple (vk skP) (mexp g (a i)))))))
+      (lambda (in i . _)
+        (tuple (vk skP) (mexp g (a i))))
+      empty-assignements)))
 
 (define P2
   (declare-step pbl "P2" (list Index)
     (step p1
-      (lambda (in i)
+      (lambda (in i . _)
         (let [ (gs (sel2of2 (sel1of2 in))) (vks (sel1of2 (sel1of2 in))) ]
           (and
             (checksign (tuple (mexp g (a i)) gs (vk skP)) (sel2of2 in) vks)
             (eq vks (vk skS)))))
-      (lambda (in i)
+      (lambda (in i . _)
         (let [ (gs (sel2of2 (sel1of2 in))) (vks (sel1of2 (sel1of2 in))) ]
-          (sign (tuple gs (mexp g (a i)) vks) skP))))
+          (sign (tuple gs (mexp g (a i)) vks) skP)))
+      empty-assignements)
     (step p2
-      (lambda (in i)
+      (lambda (in i . _)
         (let [ (gs (sel2of2 (sel1of2 in))) (vks (sel1of2 (sel1of2 in))) ]
           (and
             (checksign (tuple (mexp g (a i)) gs (vk skP)) (sel2of2 in) vks)
             (eq vks (vk skS)))))
-      (lambda (in i)
+      (lambda (in i . _)
         (let [ (gs (sel2of2 (sel1of2 in))) (vks (sel1of2 (sel1of2 in))) ]
-          (sign (tuple gs (mexp g (a i)) vks) skP))))))
+          (sign (tuple gs (mexp g (a i)) vks) skP)))
+      empty-assignements)))
 (define (P2in i p) (macro_input (P2 i) p))
 
 (define P3
   (declare-step pbl "P3" (list Index Index)
     (step p1
-      (lambda (challenge i j)
+      (lambda (challenge i j . _)
         (let [ (gS (sel2of2 (sel1of2 (P2in i p1)))) (vkS (sel1of2 (sel1of2 (P2in i p1)))) ]
           (eq gS (mexp g (b j)))))
-      (lambda (challenge i j)
-        (mexp (mexp g (a i)) (b j))))
+      (lambda (challenge i j . _)
+        (mexp (mexp g (a i)) (b j)))
+      empty-assignements)
     ; ok
     ; )) ;))
     (step p2
-      (lambda (challenge i j)
+      (lambda (challenge i j . _)
         (let [ (gS (sel2of2 (sel1of2 (P2in i p2)))) (vkS (sel1of2 (sel1of2 (P2in i p2)))) ]
           (eq gS (mexp g (b j)))))
-      (lambda (challenge i j)
-        (mexp g (k i j))))))
+      (lambda (challenge i j . _)
+        (mexp g (k i j)))
+      empty-assignements)))
 ; ok
 ; ))))
 
 (define P3fail
   (declare-step pbl "P3fail" (list Index)
     (step p1
-      (lambda (challenge i)
+      (lambda (challenge i . _)
         (let [ (gS (sel2of2 (sel1of2 (P2in i p1)))) (vkS (sel1of2 (sel1of2 (P2in i p1)))) ]
           (mnot (exists ((j Index)) (eq gS (mexp g (b j)))))))
-      (lambda _ ok))
+      (lambda _ ok)
+      empty-assignements)
     (step p2
-      (lambda (challenge i)
+      (lambda (challenge i . _)
         (let [ (gS (sel2of2 (sel1of2 (P2in i p2)))) (vkS (sel1of2 (sel1of2 (P2in i p2)))) ]
           (mnot (exists ((j Index)) (eq gS (mexp g (b j)))))))
-      (lambda _ ko))))
+      (lambda _ ko)
+      empty-assignements)))
 
 (add-constrain pbl (i) (lt (P1 i) (P2 i)))
 (add-constrain pbl (i) (lt (P2 i) (P3fail i)))
@@ -108,39 +121,43 @@
 (define Schall1
   (declare-step pbl "Schall1" (list Index)
     (step p1
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 in)) (vkp (sel1of2 in)) ]
           (eq vkp (vk skP))))
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 in)) (vkp (sel1of2 in)) ]
           (tuple
             (vk skS)
             (mexp g (b j))
-            (sign (tuple gp (mexp g (b j)) vkp) skS)))))
+            (sign (tuple gp (mexp g (b j)) vkp) skS))))
+      empty-assignements)
     (step p2
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 in)) (vkp (sel1of2 in)) ]
           (eq vkp (vk skP))))
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 in)) (vkp (sel1of2 in)) ]
           (tuple
             (vk skS)
             (mexp g (b j))
-            (sign (tuple gp (mexp g (b j)) vkp) skS)))))))
+            (sign (tuple gp (mexp g (b j)) vkp) skS))))
+      empty-assignements)))
 (define (S1in j p) (macro_input (Schall1 j) p))
 
 (define Schall2
   (declare-step pbl "Schall2" (list Index)
     (step p1
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 (S1in j p1))) (vkp (sel1of2 (S1in j p1))) ]
           (checksign (tuple (mexp g (b j)) gp (vk skS)) in vkp)))
-      (lambda _ ok))
+      (lambda _ ok)
+      empty-assignements)
     (step p2
-      (lambda (in j)
+      (lambda (in j . _)
         (let [ (gp (sel2of2 (S1in j p2))) (vkp (sel1of2 (S1in j p2))) ]
           (checksign (tuple (mexp g (b j)) gp (vk skS)) in vkp)))
-      (lambda _ ok))))
+      (lambda _ ok)
+      empty-assignements)))
 (define (S2in j p) (macro_input (Schall2 j) p))
 (add-constrain pbl (i) (lt (Schall1 i) (Schall2 i)))
 
@@ -148,27 +165,28 @@
 (publish pbl ((i Index)) (mexp g (b i)))
 
 ; enable looking for extra things to publish
-(cv-set-guided-nonce-search pbl #t)
+(config.set_guided_nonce_search pbl #t)
 
 ;; configuration
-; (cv-set-trace pbl #t)
-(cv-set-vampire-timeout pbl (cv-string->duration "300ms"))
-(cv-set-node-limit pbl 100000)
-; (cv-set-keep-smt-files pbl #t)
+; (config.set_trace pbl #t)
+(define default-timeout (b.string->duration "150ms"))
+(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
+(config.set_egg_node_limit pbl 100000)
+; (config.set_keep_smt_files pbl #t)
 
 (initialize-as-ddh ddh g mexp)
 
 (bind ((i Index) (p Protocol))
-  (cv-add-rewrite pbl (cv-mk-rewrite "lemma" (list i p)
+  (add-rewrite pbl (rw.new "lemma" (list i p)
       (and (macro_exec (P3fail i) p) (macro_cond (P3fail i) p))
       mfalse)))
 
 (bind ((i Index) (j Index))
-  (cv-register-fresh-nonce ddh (list i j) (k i j)))
+  (register-fresh-nonce ddh (list i j) (k i j)))
 
 (if (run pbl p1 p2)
   (displayln "success")
   (error "failed ddh-P"))
 
-(displayln (cv-print-report (cv-get-report pbl)))
+(displayln (report.print-report (pbl.get-report pbl)))
 (save-results "ddh-P" pbl)

@@ -1,4 +1,0 @@
-[toolchain]
-channel = "nightly-2026-01-14"
-# Or use the version string if you prefer:
-# channel = "1.93.0-nightly"

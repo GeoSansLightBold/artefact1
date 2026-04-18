@@ -1,7 +1,10 @@
 use std::fmt::Display;
+use std::path::Path;
 use std::time::Duration;
 
 use itertools::Itertools;
+use log::trace;
+use rustc_hash::FxHashMap;
 use steel::steel_vm::builtin::BuiltInModule;
 use steel::steel_vm::register_fn::RegisterFn;
 use steel_derive::Steel;
@@ -43,20 +46,50 @@ impl Report {
     pub fn get_tested_nonces(&self) -> Vec<Vec<Function>> {
         self.tested_nonces.clone()
     }
+
+    pub fn get_max_smt_time(&self) -> Duration {
+        self.max_vampire
+    }
+
+    pub fn add_smt_time(
+        &mut self,
+        keep_smt_files: bool,
+        time: Duration,
+        file: Option<&Path>,
+        successfull: bool,
+    ) {
+        self.time_spent_in_vampire += time;
+
+        if successfull && time > self.max_vampire {
+            self.max_vampire = time;
+            if keep_smt_files {
+                println!(
+                    "new longest successful vampire:\n\ttook {}\n\tfile saved at {:?}",
+                    humantime::format_duration(time),
+                    file.unwrap()
+                )
+            }
+        }
+    }
 }
 
 impl Registerable for Report {
-    fn register(module: &mut BuiltInModule) -> &mut BuiltInModule {
-        Self::register_type(module);
-        module.register_type::<Duration>("duration?");
+    fn register(modules: &mut FxHashMap<String, BuiltInModule>) {
+        let name = "ccsa/ll/report";
+        let mut module = BuiltInModule::new(name);
+        Self::register_type(&mut module);
         module
-            .register_fn("get-time-spent-in-vampire", Self::get_time_spent_in_vampire)
+            .register_fn("get-smt-time", Self::get_time_spent_in_vampire)
             .register_fn("get-total-run-calls", Self::get_total_run_calls)
             .register_fn("get-total-cache-hits", Self::get_total_cache_hits)
             .register_fn("get-hit-rate", Self::get_hit_rate)
             .register_fn("get-runtime", Self::get_runtime)
             .register_fn("get-tested-nonces", Self::get_tested_nonces)
-            .register_fn("print-report", Self::to_string)
+            .register_fn("get-max-smt-time", Self::get_max_smt_time)
+            .register_fn("print-report", Self::to_string);
+
+        trace!("defined {name} scheme module");
+        assert!(modules.insert(name.into(), module).is_none())
     }
 }
 
@@ -64,8 +97,8 @@ impl Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "Report:\n\truntime: {}\n\tvampire: {}\n\tcache hits: {:}\n\ttotal calls: {:}\n\thit \
-             rate: {:.2}%\n\tmax vampire: {}\n\ttested nonces: [{}]",
+            "Report:\n\truntime: {}\n\tsmt: {}\n\tcache hits: {:}\n\ttotal calls: {:}\n\thit \
+             rate: {:.2}%\n\tmax smt: {}\n\ttested nonces: [{}]",
             humantime::format_duration(self.get_runtime()),
             humantime::format_duration(self.get_time_spent_in_vampire()),
             self.total_cache_hits,

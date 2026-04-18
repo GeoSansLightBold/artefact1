@@ -1,21 +1,16 @@
-use std::borrow::Cow;
-
-use egg::{Pattern, Searcher};
-use golgge::{Dependancy, Program, Rule};
-use itertools::{Itertools, chain};
-use static_init::dynamic;
+use itertools::chain;
 
 use crate::libraries::deduce::GetDeduce;
-use crate::problem::{PAnalysis, PRule, RcRule};
+/// Creates a set of static deduction rules.
+use crate::libraries::utils::RuleSink;
+use crate::problem::{PRule, RcRule};
 use crate::terms::{
     AND, BIT_DEDUCE, BITE, BOOL_DEDUCE, EQUIV, FAIL, FRESH_NONCE, HAPPENS, IS_FRESH_NONCE, LEQ,
-    MACRO_COND, MACRO_EXEC, MACRO_FRAME, MACRO_INPUT, MACRO_MSG, MITE, NONCE, PRED, UNFOLD_COND,
+    MACRO_COND, MACRO_EXEC, MACRO_FRAME, MACRO_INPUT, MACRO_MSG, MITE, PRED, UNFOLD_COND,
     UNFOLD_MSG, VAMPIRE,
 };
-use crate::{Lang, rexp};
 
-/// Creates a set of static deduction rules.
-pub fn mk_rules() -> impl Iterator<Item = RcRule> {
+pub fn add_rules(sink: &mut impl RuleSink) {
     let equiv = &EQUIV;
     let deduce_m = &BIT_DEDUCE;
     let deduce_b = &BOOL_DEDUCE;
@@ -43,9 +38,11 @@ pub fn mk_rules() -> impl Iterator<Item = RcRule> {
         )
     });
 
-    let vampire_fail = mk_prolog!("vampire false";: (VAMPIRE false) :-!,FAIL);
+    sink.extend_rules(deduce_macro);
 
-    let others = mk_many_prolog! {
+    sink.add_rule(mk_prolog!("vampire false";: (VAMPIRE false) :-!,FAIL));
+
+    sink.extend_rules(mk_many_prolog! {
         "vampire trivial":
         (VAMPIRE true).
 
@@ -81,6 +78,12 @@ pub fn mk_rules() -> impl Iterator<Item = RcRule> {
             (VAMPIRE (=> #h1 (HAPPENS #t1))),
             (VAMPIRE (=> #h2 (HAPPENS #t2))),
             (deduce_m #u #v (UNFOLD_MSG #t1 #p1) (UNFOLD_MSG #t2 #p2) #h1 #h2).
+
+        "deduce unfold to message":
+        (deduce_m #u #v (UNFOLD_MSG #t1 #p1) (UNFOLD_MSG #t2 #p2) #h1 #h2) :-
+            (VAMPIRE (=> #h1 (HAPPENS #t1))),
+            (VAMPIRE (=> #h2 (HAPPENS #t2))),
+            (deduce_m #u #v (MACRO_MSG #t1 #p1) (MACRO_MSG #t2 #p2) #h1 #h2).
 
         "deduce condition":
         (deduce_b (MACRO_FRAME #t #p1) (MACRO_FRAME #t #p2) (MACRO_COND #t2 #p1) (MACRO_COND #t2 #p2) #h1 #h2) :-
@@ -126,11 +129,5 @@ pub fn mk_rules() -> impl Iterator<Item = RcRule> {
 
         "fresh nonce fresh":
         (FRESH_NONCE (IS_FRESH_NONCE #x) #u #h1).
-    };
-
-    chain![
-        deduce_macro.map(|x| x.into_mrc()),
-        [vampire_fail.into_mrc()],
-        others.into_iter().map(|x| x.into_mrc())
-    ]
+    })
 }

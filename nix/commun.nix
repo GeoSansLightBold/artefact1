@@ -17,11 +17,11 @@
           lockFile = "${src}/Cargo.lock";
 
           outputHashes = {
-            "steel-core-0.7.0" = "sha256-+QNeyE2vUy8g/8cXPM/LkyTSH9bQAUT5PDvb0I2PraA=";
+            "steel-core-0.8.2" = "sha256-G3hWh/AIfvAyAbCG6j/EWKeBsPOk9bMpV5ko+UPu2p4";
           };
         };
         src = lib.cleanSource src;
-        # patches = [ "${src}/nix.patch" ];
+        patches = [ "${src}/nix.patch" ];
         buildInputs = [ vampire ];
         doCheck = false;
       };
