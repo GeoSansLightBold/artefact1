@@ -28,6 +28,11 @@ indistinguishaility --help # for any other options
 ```
 Note that all option can be overwritten by the scheme file. This is notably done in all examples for reproducibility.
 
+### SMT solver
+To run `indistinguishability` you need at least `vampire`, `z3` or `cvc5` available. `indistinguishability` will default to searching in you `PATH`, otherwise options can overwrite this.
+
+Once again the `nix` shell provides these solvers using the exact version use to generate the table of the paper.
+
 ## Experiments
 The experiments in the paper are in [`./crates/indistinguishability/tests/passing/`](./crates/indistinguishability/tests/passing/README.md). Refer to the [`README.md`](./crates/indistinguishability/tests/passing/README.md) there for more informations.
 
