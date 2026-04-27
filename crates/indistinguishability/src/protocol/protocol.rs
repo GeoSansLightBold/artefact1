@@ -163,6 +163,7 @@ mod converter {
     use crate::terms::{Formula, Function, Variable};
 
     // FIXME: what was this used for ?
+    #[allow(unused)]
     pub(crate) fn clone_from_sanitizer(
         subst: &mut FxHashMap<Variable, Variable>,
         from: &Function,

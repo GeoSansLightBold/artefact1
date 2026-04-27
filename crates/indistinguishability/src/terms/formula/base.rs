@@ -139,6 +139,7 @@ impl AsFormula for Formula {
     fn destruct(self) -> Destructed<Self, impl Iterator<Item = Self>> {
         dynamic_iter!(MIter; One:A, Many:B, None:C);
 
+        #[allow(deprecated)]
         match self {
             Formula::Quantifier { head, vars, arg } => Destructed {
                 head: HeadSk::Quant(RecFOFormulaQuant::new(head, vars.as_owned())),

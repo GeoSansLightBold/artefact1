@@ -383,7 +383,6 @@ where
     /// same as [Self::run_expr] but starting from an [Id] in the [EGraph]
     pub fn run(&mut self, base_goal: egg::Id, fuel: u64) -> bool {
         self.total_calls += 1;
-        let ndepth = u64::MAX - fuel; // FIXME - why is this not used ?
         let gtmp = if self.is_tracing_enabled(DebugLevel::RULE) {
             let g = self.egraph().id_to_expr(base_goal);
             println!("({base_goal:}) selecting {}", g.pretty(80));
