@@ -60,13 +60,7 @@
         pkgs-vampire = import nixpkgs-vampire {inherit system; };
         treefmtEval = treefmt-nix.lib.evalModule pkgs ./nix/fmt.nix;
 
-        use-nightly = true;
-        rust =
-          with pkgs;
-          if use-nightly then
-            rust-bin.selectLatestNightlyWith (toolchain: toolchain.complete)
-          else
-            rust-bin.stable.latest.complete;
+        rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rust;

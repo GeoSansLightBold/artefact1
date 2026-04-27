@@ -4,8 +4,8 @@
 CRATE_DIR := ../..
 PROJECT_DIR := $(CRATE_DIR)/../..
 # As per .cargo/config.toml in the project root
-BUILD_DIR := /tmp/ccsa/build/dir/release
-# BUILD_DIR := $(PROJECT_DIR)/target/release
+# BUILD_DIR := /tmp/ccsa/build/dir/release
+BUILD_DIR := $(PROJECT_DIR)/target/release
 BINARY_NAME := indistinguishability
 BINARY := ./$(BINARY_NAME)
 RESULTS := results.csv
@@ -56,42 +56,14 @@ $(RESULTS): $(BINARY) $(SOURCES)
 clean:
 	rm -f $(RESULTS) $(BINARY)
 
-# Test all examples with different solver configurations (PARALLEL VERSION)
-# Uses dynamic core allocation to maximize parallelism while respecting solver constraints:
-#   - vampire-enabled configs: all available cores (forwarded to indistinguishability)
-#   - z3-only/cvc5-only/no-solvers: 1 core each (run in parallel)
-#
-# Usage:
-#   make test-solvers-parallel                    # Test all configs, all files
-#   make test-solvers-parallel CONFIGS="..."      # Test specific configs
-#   make test-solvers-parallel FILES="..."        # Test specific files
-#   make test-solvers-parallel TIMEOUT=1800       # Set timeout (seconds)
-#   make test-solvers-parallel CORES=8            # Set core count (default: machine cores)
-#   make test-solvers-parallel RESUME=1           # Resume from checkpoint
-#   make test-solvers-parallel DRY_RUN=1          # Show test plan
-#
-# Examples:
-#   make test-solvers-parallel CONFIGS="no-vampire z3-only"
-#   make test-solvers-parallel FILES="basic-hash.scm ddh-P.scm"
-#   make test-solvers-parallel TIMEOUT=3600 CONFIGS="all-enabled"
-#   make test-solvers-parallel CORES=8            # Use only 8 cores
-#
-# Environment variables:
-#   SOLVER_CONFIGS - Space-separated list of configs
-#   TEST_FILES - Space-separated list of files
-#   TEST_TIMEOUT - Timeout in seconds (default: 1800)
-#   TEST_CORES - Number of cores to use (default: machine core count)
+CONFIGS:=all-enabled vampire-only z3-only cvc5-only
+
 .PHONY: test-solvers-parallel
 test-solvers-parallel: $(BINARY)
-	@python3 $(CURRENT_DIR)test-solvers-parallel.py \
+	python3 $(CURRENT_DIR)test-solvers-parallel.py \
 		$(if $(CONFIGS),--configs $(CONFIGS),) \
 		$(if $(FILES),--files $(FILES),) \
 		$(if $(TIMEOUT),--timeout $(TIMEOUT),--timeout 1800) \
 		$(if $(TEST_CORES),--cores $(TEST_CORES),) \
 		$(if $(RESUME),--resume,) \
 		$(if $(DRY_RUN),--dry-run,)
-
-# Legacy sequential test script (kept for backwards compatibility)
-.PHONY: test-solvers
-test-solvers: $(BINARY)
-	@./test-solvers.sh
