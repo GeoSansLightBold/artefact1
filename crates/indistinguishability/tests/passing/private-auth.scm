@@ -63,7 +63,7 @@
 
 
 (publish pbl ((i Index) (j Index)) (pk (ka i j)))
-(publish pbl ((i Index) ) (pkb i))
+(publish pbl ((i Index)) (pkb i))
 ; (publish pbl ((i Index) ) (nb i))
 
 ; (define pa (declare-step pbl "publish_a" (list Index Index)
@@ -128,17 +128,8 @@
         (m_ite c (bitstring-length m1) (bitstring-length m2))))))
 
 ;; configuration
-; (config.set_trace pbl #t)
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
 (config.set_egg_node_limit pbl 10000000)
-; (config.set_egg_node_limit pbl 200)
 (config.set_enc_kp_limit pbl 1)
 (config.set_fa_limit pbl 0)
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed private auth"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "private-auth" pbl)
+(run-and-save pbl p1 p2 "private-auth" "150ms")

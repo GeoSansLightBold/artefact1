@@ -105,13 +105,5 @@
 (add-constrain pbl (i j) (<> (rs i j) (rf i)))
 
 ;; configuration
-; (config.set_trace pbl #t)
-(define default-timeout (b.string->duration "300ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed hash-lock"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results  "hash-lock" pbl)
+(run-and-save pbl p1 p2 "hash-lock" "150ms")

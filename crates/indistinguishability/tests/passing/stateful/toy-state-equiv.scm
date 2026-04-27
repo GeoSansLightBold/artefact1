@@ -49,12 +49,4 @@
 (bind ((i Index) (j Index))
   (register-fresh-nonce prf (list i j) (n i j)))
 
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
-
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed toy-state-equiv"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "toy-state-equiv" pbl)
+(run-and-save pbl p1 p2 "toy-state-equiv" "150ms")

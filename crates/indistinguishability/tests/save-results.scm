@@ -1,21 +1,19 @@
 (provide
-  save-results scale-timeout)
+  save-results scale-timeout run-and-save)
 (require-builtin ccsa/ll/pbl as pbl->)
 (require-builtin ccsa/ll/report as report->)
 (require-builtin ccsa/ll/configuration as config->)
 (require-builtin ccsa/ll as b.)
-; (require-builtin steel/base)
+(require "ccsa/solver")
 
-; (define aaaa duration->millis )
-
-
+;; print a csv row in `file`
 (define (print-row file . args)
   (begin
     (for-each (lambda (x)
         (begin
           (cond
             [ (string? x) (write-string x file) ]
-            [ (b.duration? x)  (write (b.duration->millis x) file) ]
+            [ (b.duration? x) (write (b.duration->millis x) file) ]
             [else (write x file) ])
           (write-string "," file)))
       args)
@@ -50,3 +48,11 @@
     (vampire-timeout (config->get_smt_timeout pbl))
     ]
     (print-row file name runtime vampire max-smt total hits hit-rate vampire-timeout)))
+
+(define (run-and-save pbl p1 p2 name timeout) (begin
+    (config->set_smt_timeout pbl (b.mult->duration scale-timeout (b.string->duration timeout)))
+    (if (run pbl p1 p2)
+      (displayln "success")
+      (error "failed " name))
+    (displayln (report->print-report (pbl->get-report pbl)))
+    (save-results name pbl)))

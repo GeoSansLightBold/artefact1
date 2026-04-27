@@ -33,8 +33,8 @@
 (define-function a pbl (Index) -> Nonce)
 (define-function b pbl (Index) -> Nonce)
 (define-function k pbl (Index Index) -> Nonce)
-(define-function skP pbl  Nonce)
-(define-function skS pbl  Nonce)
+(define-function skP pbl Nonce)
+(define-function skS pbl Nonce)
 
 (define empty-cond (lambda _ mtrue))
 
@@ -177,20 +177,9 @@
 (bind ((i Index) (j Index))
   (register-fresh-nonce ddh (list i j) (k i j)))
 
+;; configuration
 ; enable looking for extra things to publish
 (config.set_guided_nonce_search pbl #t)
-
-;; configuration
-; (config.set_trace pbl #t)
 (config.set_egg_node_limit pbl 100000)
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
-; (config.set_fa_limit pbl 0)
-; (config.set_keep_smt_files pbl #t)
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed ddh-S"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "ddh-S" pbl)
+(run-and-save pbl p1 p2 "ddh-S" "150ms")

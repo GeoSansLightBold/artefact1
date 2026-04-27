@@ -35,6 +35,8 @@
 
 (define ptcls (list p1 p2))
 
+; Protocol definition
+
 (define tag (declare-same-step pbl "tag" ptcls (list Index Index)
     (lambda _ mtrue)
     (lambda (p in i j . _) (tuple (n i j) (mhash (n i j) (mk i j p))))
@@ -53,6 +55,7 @@
 
 (initialize-as-prf prf mhash)
 
+;; lemma
 (bind
   ((i Index) (j Index)
     (t Time)
@@ -67,13 +70,4 @@
             (lt (tag i j) t))))))); <- very important
 
 
-;; configuration
-; (cv-set-trace pbl #t)
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout (b.string->duration "150ms")))
-
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed basic-hash"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "basic-hash" pbl)
+(run-and-save pbl p1 p2 "basic-hash" "150ms")

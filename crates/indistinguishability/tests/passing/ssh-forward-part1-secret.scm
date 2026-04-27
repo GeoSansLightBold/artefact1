@@ -65,22 +65,14 @@
 (publish pbl () (mexp g b1))
 
 (define mehhh (declare-step pbl "meh" '()
-  (step p1 empty-cond (lambda _ (mexp (mexp g a1) b1)) empty-assignements)
-  (step p2 empty-cond (lambda _ (mexp g k11)) empty-assignements)
-))
+    (step p1 empty-cond (lambda _ (mexp (mexp g a1) b1)) empty-assignements)
+    (step p2 empty-cond (lambda _ (mexp g k11)) empty-assignements)))
 (add-constrain pbl () (lt mehhh S1))
 (add-constrain pbl () (lt mehhh P1))
-(add-rewrite pbl (rw.new "l1" '() (mexp (mexp g a1) b1) (unfold_msg mehhh p1) ))
-(add-rewrite pbl (rw.new "l2" '() (mexp g k11) (unfold_msg mehhh p2) ))
+(add-rewrite pbl (rw.new "l1" '() (mexp (mexp g a1) b1) (unfold_msg mehhh p1)))
+(add-rewrite pbl (rw.new "l2" '() (mexp g k11) (unfold_msg mehhh p2)))
 
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
 (register-fresh-nonce ddh '() k11)
 (config.set_guided_nonce_search pbl #t)
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed ssh-forward-part1-secret"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "ssh-forward-part1-secret" pbl)
+(run-and-save pbl p1 p2 "ssh-forward-part1-secret" "150ms")

@@ -13,6 +13,8 @@
 (require-builtin ccsa/ll/report as report.)
 (require-builtin ccsa/ll/builtin-functions as builtin.)
 
+;; This is so toyish, that it is not part of the paper
+
 (define pbl (mk-problem 'x))
 
 (define p1 (declare-protocol pbl))
@@ -28,14 +30,4 @@
     (step p1 (lambda _ mtrue) (lambda _ mempty) (lambda (in cells) (list (store-cell s := mempty))))
     (step p2 (lambda _ mtrue) (lambda _ mempty) empty-assignements)))
 
-;; Configuration - use short timeout
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
-
-;; Run the indistinguishability check
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed memory-cell-simple"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "memory-cell-simple" pbl)
+(run-and-save pbl p1 p2 "memory-cell-simple" "150ms")

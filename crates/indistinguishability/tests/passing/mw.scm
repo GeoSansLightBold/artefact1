@@ -139,15 +139,7 @@
 (add-smt-axiom pbl (mnot (eq tag1 tag2)))
 
 ;; configuration
-; (config.set_trace pbl #t)
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
 (config.set_egg_node_limit pbl 100000)
 (config.set_prf_limit pbl 1)
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed mw"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "mw" pbl)
+(run-and-save pbl p1 p2 "mw" "150ms")

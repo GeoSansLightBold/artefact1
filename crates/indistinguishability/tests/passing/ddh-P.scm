@@ -164,15 +164,6 @@
 (publish pbl ((i Index)) (mexp g (a i)))
 (publish pbl ((i Index)) (mexp g (b i)))
 
-; enable looking for extra things to publish
-(config.set_guided_nonce_search pbl #t)
-
-;; configuration
-; (config.set_trace pbl #t)
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
-(config.set_egg_node_limit pbl 100000)
-; (config.set_keep_smt_files pbl #t)
 
 (initialize-as-ddh ddh g mexp)
 
@@ -184,9 +175,9 @@
 (bind ((i Index) (j Index))
   (register-fresh-nonce ddh (list i j) (k i j)))
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed ddh-P"))
+;; configuration
+(config.set_egg_node_limit pbl 100000)
+; enable looking for extra things to publish
+(config.set_guided_nonce_search pbl #t)
 
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "ddh-P" pbl)
+(run-and-save pbl p1 p2 "ddh-P" "150ms")

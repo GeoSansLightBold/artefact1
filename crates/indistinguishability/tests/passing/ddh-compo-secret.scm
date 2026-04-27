@@ -153,13 +153,12 @@
 
 
 (define mehhh (declare-step pbl "meh" '()
-  (step p1 empty-cond (lambda _ (mexp (mexp g a1) b1)) empty-assignements)
-  (step p2 empty-cond (lambda _ (mexp g k11)) empty-assignements)
-))
+    (step p1 empty-cond (lambda _ (mexp (mexp g a1) b1)) empty-assignements)
+    (step p2 empty-cond (lambda _ (mexp g k11)) empty-assignements)))
 (add-constrain pbl () (lt mehhh S1))
 (add-constrain pbl () (lt mehhh P1))
-(add-rewrite pbl (rw.new "l1" '() (mexp (mexp g a1) b1) (unfold_msg mehhh p1) ))
-(add-rewrite pbl (rw.new "l2" '() (mexp g k11) (unfold_msg mehhh p2) ))
+(add-rewrite pbl (rw.new "l1" '() (mexp (mexp g a1) b1) (unfold_msg mehhh p1)))
+(add-rewrite pbl (rw.new "l2" '() (mexp g k11) (unfold_msg mehhh p2)))
 
 (initialize-as-ddh ddh g mexp)
 
@@ -169,23 +168,7 @@
 
 ; enable looking for extra things to publish
 (config.set_guided_nonce_search pbl #t)
-; It needs to "find" these nonces
-; (publish pbl () skP)
-; (publish pbl () skS)
 
-;; configuration
-; (cv-set-trace pbl #t)
 (config.set_egg_node_limit pbl 100000)
-(define default-timeout (b.string->duration "150ms"))
-(config.set_smt_timeout pbl (b.mult->duration scale-timeout default-timeout))
-; (config.set_fa_limit pbl 5)
-; (config.set_keep_smt_files pbl #t)
-; (config.set_ddh_limit pbl 1)
 
-(if (run pbl p1 p2)
-  (displayln "success")
-  (error "failed compo-ddh-secret"))
-
-(displayln (report.print-report (pbl.get-report pbl)))
-(save-results "compo-ddh-S" pbl)
-
+(run-and-save pbl p1 p2 "compo-ddh-S" "150ms")

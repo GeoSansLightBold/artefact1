@@ -10,7 +10,6 @@ members = [
   "crates/quarck"
 ]
 resolver = "2"
-# authors = ["Simon Jeanteur <7871851+puyral@users.noreply.github.com>"]
 default-members = ["crates/indistinguishability"]
 
 [workspace.dependencies]
