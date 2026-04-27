@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    nixpkgs-vampire.url ="github:NixOS/nixpkgs/e0d5027e8873eaa5e8f74fba39072fcb231f4b4b";
+    nixpkgs-vampire.url = "github:NixOS/nixpkgs/e0d5027e8873eaa5e8f74fba39072fcb231f4b4b";
 
     flake-utils = {
       url = "github:numtide/flake-utils";
@@ -51,13 +51,13 @@
         };
         overlays = [
           (import rust-overlay)
-          vampire-4-overlay  # <- comment this out to use Vampire 5.**
+          vampire-4-overlay # <- comment this out to use Vampire 5.**
           # vampire-master-overlay # <- use this to use Vampire for the master branch
         ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-        pkgs-vampire = import nixpkgs-vampire {inherit system; };
+        pkgs-vampire = import nixpkgs-vampire { inherit system; };
         treefmtEval = treefmt-nix.lib.evalModule pkgs ./nix/fmt.nix;
 
         rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
