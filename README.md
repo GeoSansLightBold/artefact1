@@ -6,6 +6,8 @@ The two main artefacts are:
 
 The repository also includes [`cryptovampire`](./crates/cryptovampire/) from [1] vendored in for inspiration and its supporting crates as well as [`egg`](./crates/egg/) from [2]. 
 
+*NB*: In case `https://anonymous.4open.science` proves unreliable, this repository is also available and anonymized at [`https://github.com/GeoSansLightBold/artefact1`](https://github.com/GeoSansLightBold/artefact1).
+
 ## Building
 ### [`nix`](https://nixos.org/)
 This is a `nix` enabled repository. So simply call `nix build` to make the binary available at `./result/bin/indistinguishability`.
